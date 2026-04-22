@@ -53,7 +53,6 @@ export default function manifest(): MetadataRoute.Manifest {
       {
         src: "/screenshots/dashboard.png",
         sizes: "390x844",
-        // @ts-expect-error — form_factor valid in spec but not yet in TS types
         form_factor: "narrow",
         label: "Tableau de bord MargeChef",
       },
