@@ -1,0 +1,787 @@
+"use client";
+
+import { useState, useEffect, useRef } from "react";
+import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
+import {
+  Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
+  TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight,
+  CheckCircle2, Star, Menu, X, Sparkles,
+} from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+// ─── Animated counter ────────────────────────────────────
+function useCounter(target: number, duration = 1800, active = false) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!active) return;
+    let start: number;
+    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+    const step = (ts: number) => {
+      if (!start) start = ts;
+      const p = easeOut(Math.min((ts - start) / duration, 1));
+      setCount(Math.round(p * target));
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [target, duration, active]);
+  return count;
+}
+
+// ─── Shader background (light) ───────────────────────────
+function ShaderBackground() {
+  return (
+    <div className="fixed inset-0 -z-10 overflow-hidden noise" style={{ background: "#F7F9FF" }}>
+      {/* Blob indigo — top left */}
+      <div className="absolute animate-blob-1" style={{
+        width: 800, height: 700,
+        borderRadius: "60% 40% 30% 70% / 60% 30% 70% 40%",
+        background: "radial-gradient(circle, rgba(79,70,229,0.09) 0%, transparent 70%)",
+        top: "-20%", left: "-15%",
+        filter: "blur(80px)",
+      }} />
+      {/* Blob blue — bottom right */}
+      <div className="absolute animate-blob-2" style={{
+        width: 900, height: 700,
+        borderRadius: "30% 70% 70% 30% / 30% 52% 48% 70%",
+        background: "radial-gradient(circle, rgba(37,99,235,0.07) 0%, transparent 70%)",
+        bottom: "-25%", right: "-20%",
+        filter: "blur(100px)",
+      }} />
+      {/* Blob sky — center */}
+      <div className="absolute animate-blob-3" style={{
+        width: 600, height: 600,
+        borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(14,165,233,0.05) 0%, transparent 70%)",
+        top: "35%", left: "40%",
+        filter: "blur(120px)",
+      }} />
+    </div>
+  );
+}
+
+// ─── Navigation ──────────────────────────────────────────
+function Nav({ onCTA }: { onCTA: () => void }) {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const fn = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", fn, { passive: true });
+    return () => window.removeEventListener("scroll", fn);
+  }, []);
+
+  return (
+    <motion.nav
+      initial={{ y: -20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
+        scrolled ? "glass-nav py-3" : "py-5"
+      }`}
+    >
+      <div className="max-w-6xl mx-auto px-5 flex items-center justify-between">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
+            <ChefHat size={17} className="text-white" />
+          </div>
+          <span className="font-bold text-slate-900 tracking-tight text-lg">
+            Marge<span className="gradient-text">Chef</span>
+          </span>
+        </div>
+
+        {/* Desktop links */}
+        <div className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-500">
+          <a href="#comment" className="hover:text-slate-900 transition-colors">Comment ça marche</a>
+          <a href="#benefices" className="hover:text-slate-900 transition-colors">Bénéfices</a>
+          <a href="#securite" className="hover:text-slate-900 transition-colors">Sécurité</a>
+        </div>
+
+        <div className="hidden md:flex items-center gap-3">
+          <button
+            onClick={onCTA}
+            className="btn-primary text-sm px-5 py-2.5 rounded-xl"
+          >
+            Essayer gratuitement
+          </button>
+        </div>
+
+        <button
+          className="md:hidden text-slate-500"
+          onClick={() => setMobileOpen(v => !v)}
+        >
+          {mobileOpen ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="md:hidden glass-nav overflow-hidden"
+          >
+            <div className="px-5 py-4 flex flex-col gap-4 text-sm font-medium text-slate-600">
+              <a href="#comment" onClick={() => setMobileOpen(false)}>Comment ça marche</a>
+              <a href="#benefices" onClick={() => setMobileOpen(false)}>Bénéfices</a>
+              <a href="#securite" onClick={() => setMobileOpen(false)}>Sécurité</a>
+              <button onClick={onCTA} className="btn-primary py-3 rounded-xl text-sm">
+                Essayer gratuitement
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.nav>
+  );
+}
+
+// ─── Hero ─────────────────────────────────────────────────
+function HeroSection({ onCTA }: { onCTA: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ["start start", "end start"] });
+  const y = useTransform(scrollYProgress, [0, 1], [0, 60]);
+  const opacity = useTransform(scrollYProgress, [0, 0.7], [1, 0]);
+
+  return (
+    <section ref={ref} className="relative min-h-screen flex flex-col items-center justify-center text-center px-5 pt-24">
+      <motion.div style={{ y, opacity }} className="max-w-4xl mx-auto">
+
+        {/* Badge */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1, duration: 0.6 }}
+          className="inline-flex items-center gap-2 label-blue rounded-full px-4 py-2 text-sm font-medium mb-8"
+        >
+          <Sparkles size={14} className="text-blue-500" />
+          Créé par d'anciens restaurateurs, pour les restaurateurs
+        </motion.div>
+
+        {/* Headline */}
+        <motion.h1
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.7 }}
+          className="text-5xl md:text-7xl font-bold text-slate-900 leading-[1.07] tracking-tight mb-6"
+        >
+          Votre marge fond.
+          <br />
+          <span className="gradient-text">En silence.</span>
+        </motion.h1>
+
+        {/* Sub */}
+        <motion.p
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35, duration: 0.7 }}
+          className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-10"
+        >
+          Chaque fois qu'un fournisseur augmente ses prix, votre marge diminue
+          sans que vous le sachiez. MargeChef détecte ces glissements
+          automatiquement, en{" "}
+          <span className="text-slate-800 font-semibold">moins de 30 secondes</span>.
+        </motion.p>
+
+        {/* CTAs */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5, duration: 0.7 }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+        >
+          <button
+            onClick={onCTA}
+            className="btn-primary w-full sm:w-auto text-base px-8 py-4 rounded-2xl flex items-center justify-center gap-2.5 group"
+          >
+            Protéger ma marge maintenant
+            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+          <a href="#comment" className="text-slate-400 hover:text-slate-700 text-sm font-medium flex items-center gap-1.5 transition-colors">
+            Voir comment ça marche
+          </a>
+        </motion.div>
+
+        {/* Social proof */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.75 }}
+          className="mt-12 flex items-center justify-center gap-6 flex-wrap"
+        >
+          {[
+            "Sans carte bancaire",
+            "RGPD · Hébergé en Europe",
+            "14 jours d'essai offerts",
+          ].map((text, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-sm text-slate-400">
+              <CheckCircle2 size={14} className="text-blue-500" />
+              {text}
+            </div>
+          ))}
+        </motion.div>
+
+        {/* Floating mockup card preview */}
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-16 max-w-sm mx-auto animate-float"
+        >
+          <div className="glass card-hover rounded-3xl p-5 text-left">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-2 h-2 rounded-full bg-blue-500" />
+              <span className="text-xs text-slate-500 font-medium">Analyse en cours — Metro Cash & Carry</span>
+            </div>
+            <div className="space-y-2.5">
+              {[
+                { name: "Filet de saumon", change: "+14.2%", bad: true },
+                { name: "Tomates cerises", change: "+3.5%", bad: true },
+                { name: "Beurre doux", change: "−1.0%", bad: false },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center justify-between">
+                  <span className="text-sm text-slate-700">{item.name}</span>
+                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-lg ${
+                    item.bad ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
+                  }`}>{item.change}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              <div className="btn-primary text-center text-xs py-2 rounded-xl">
+                2 alertes marge générées
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+
+      {/* Scroll indicator */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.4 }}
+        className="absolute bottom-10 left-1/2 -translate-x-1/2"
+      >
+        <motion.div
+          animate={{ y: [0, 8, 0] }}
+          transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+          className="w-5 h-8 glass rounded-full flex items-start justify-center pt-1.5"
+        >
+          <div className="w-1 h-2 bg-blue-400 rounded-full" />
+        </motion.div>
+      </motion.div>
+    </section>
+  );
+}
+
+// ─── Stats section ────────────────────────────────────────
+function StatsSection() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) setActive(true); },
+      { threshold: 0.3 }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  const pct = useCounter(6, 1600, active);
+  const hours = useCounter(4, 1400, active);
+  const k = useCounter(12, 2000, active);
+
+  const stats = [
+    { value: `${pct}%`, label: "de marge perdue en moyenne chaque année à cause de l'inflation non répercutée", Icon: TrendingDown, color: "text-red-500" },
+    { value: `${hours}h`, label: "perdues chaque semaine à vérifier manuellement les prix fournisseurs", Icon: Clock, color: "text-amber-500" },
+    { value: `${k}k€`, label: "de manque à gagner annuel pour un restaurant avec 500 k€ de chiffre d'affaires", Icon: Euro, color: "text-blue-600" },
+  ];
+
+  return (
+    <section ref={ref} className="py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-14"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Le problème en chiffres</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">L'inflation silencieuse qui ronge vos marges</h2>
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {stats.map(({ value, label, Icon, color }, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.12, duration: 0.6 }}
+              className="card rounded-2xl p-8 card-hover"
+            >
+              <Icon className={`${color} mb-5`} size={28} />
+              <div className={`text-5xl font-bold ${color} mb-3 font-mono tabular-nums`}>{value}</div>
+              <p className="text-slate-500 text-sm leading-relaxed">{label}</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── How it works ─────────────────────────────────────────
+function HowItWorksSection() {
+  const steps = [
+    {
+      number: "01", Icon: Camera,
+      title: "Photographiez votre facture",
+      subtitle: "Depuis votre téléphone, en 5 secondes",
+      description: "À réception de votre livraison, ouvrez MargeChef et prenez la facture en photo. Pas de saisie manuelle, pas de CSV. Juste une photo.",
+      detail: "Compatible Metro, Promocash, Transgourmet, grossistes locaux et toute facture PDF.",
+      mockup: <InvoiceMockup />,
+    },
+    {
+      number: "02", Icon: Zap,
+      title: "L'IA analyse en 30 secondes",
+      subtitle: "Claude Vision lit, compare, calcule",
+      description: "Notre IA extrait chaque ligne, identifie les produits et les compare instantanément à vos prix historiques. Aucune action de votre part.",
+      detail: "Précision > 97% sur les factures manuscrites et imprimées. TVA détectée automatiquement.",
+      mockup: <AIMockup />,
+    },
+    {
+      number: "03", Icon: Bell,
+      title: "Alerte immédiate si ça dépasse 3%",
+      subtitle: "Votre marge protégée en temps réel",
+      description: "Dès qu'un prix augmente de plus de 3%, vous recevez une notification avec l'impact exact sur vos fiches techniques.",
+      detail: "Visualisez quelles recettes sont impactées et de combien de points de marge.",
+      mockup: <AlertMockup />,
+    },
+  ];
+
+  return (
+    <section id="comment" className="py-32 px-5">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-20"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Comment ça marche</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
+            3 étapes. <span className="gradient-text">Zéro friction.</span>
+          </h2>
+          <p className="text-slate-500 max-w-xl mx-auto">Conçu par des restaurateurs qui n'ont pas de temps à perdre.</p>
+        </motion.div>
+
+        <div className="space-y-28">
+          {steps.map((step, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 48 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+              className={`grid md:grid-cols-2 gap-12 items-center ${
+                i % 2 === 1 ? "md:[&>*:first-child]:order-2" : ""
+              }`}
+            >
+              <div>
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="step-badge text-3xl font-bold px-4 py-2 rounded-2xl font-mono">{step.number}</span>
+                  <div className="h-px flex-1 divider-gradient" />
+                </div>
+                <div className="flex items-center gap-2 text-blue-600 text-sm font-semibold mb-3">
+                  <step.Icon size={15} /> {step.subtitle}
+                </div>
+                <h3 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4">{step.title}</h3>
+                <p className="text-slate-500 leading-relaxed mb-5">{step.description}</p>
+                <div className="glass-blue rounded-xl px-4 py-3 text-sm text-slate-500 italic">{step.detail}</div>
+              </div>
+              <div className="flex justify-center">{step.mockup}</div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Mockups (light theme) ───────────────────────────────
+function InvoiceMockup() {
+  return (
+    <div className="relative w-64 h-80 card rounded-3xl overflow-hidden shadow-card">
+      <div className="absolute top-0 inset-x-0 h-6 bg-slate-100 flex items-center justify-center">
+        <div className="w-16 h-3 rounded-b-lg bg-slate-200" />
+      </div>
+      <div className="absolute inset-0 top-6 bg-white p-4">
+        <div className="space-y-2 pt-2">
+          {[78, 65, 82, 58, 70].map((w, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <div className="h-2.5 bg-slate-100 rounded" style={{ width: `${w}%` }} />
+              <div className="h-2.5 bg-slate-100 rounded w-12 flex-shrink-0" />
+            </div>
+          ))}
+        </div>
+        <div className="absolute inset-x-0 top-6" style={{ height: "calc(100% - 24px)" }}>
+          <div className="scan-line" />
+        </div>
+        {[["top-2 left-2","border-t-2 border-l-2"],["top-2 right-2","border-t-2 border-r-2"],["bottom-2 left-2","border-b-2 border-l-2"],["bottom-2 right-2","border-b-2 border-r-2"]].map(([pos, border], i) => (
+          <div key={i} className={`absolute ${pos} w-5 h-5 border-blue-500 ${border} rounded-sm`} />
+        ))}
+      </div>
+      <div className="absolute bottom-4 inset-x-0 flex justify-center">
+        <div className="w-12 h-12 rounded-full btn-primary flex items-center justify-center glow-blue-sm">
+          <Camera size={20} className="text-white" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AIMockup() {
+  const lines = [
+    { name: "Saumon", prev: "16.20€", curr: "18.50€", up: true },
+    { name: "Tomates", prev: "3.10€", curr: "3.20€", up: true },
+    { name: "Huile olive", prev: "27.50€", curr: "28.90€", up: true },
+    { name: "Beurre", prev: "4.80€", curr: "4.75€", up: false },
+  ];
+  return (
+    <div className="w-72 card rounded-2xl overflow-hidden shadow-card">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse-slow" />
+        <span className="text-xs text-slate-500 font-medium">Analyse en cours…</span>
+      </div>
+      <div className="p-4 space-y-3">
+        {lines.map((l, i) => (
+          <motion.div key={i} initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="flex items-center justify-between">
+            <span className="text-sm text-slate-700">{l.name}</span>
+            <div className="flex items-center gap-1.5 text-xs font-mono">
+              <span className="text-slate-400">{l.prev}</span>
+              <span className="text-slate-300">→</span>
+              <span className="text-slate-800 font-semibold">{l.curr}</span>
+              <span className={`font-bold px-1.5 py-0.5 rounded-md text-[11px] ${l.up ? "bg-red-50 text-red-500" : "bg-emerald-50 text-emerald-600"}`}>
+                {l.up ? "↑" : "↓"}
+              </span>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      <div className="px-4 pb-4">
+        <div className="btn-primary w-full text-center text-xs py-2.5 rounded-xl">3 alertes générées</div>
+      </div>
+    </div>
+  );
+}
+
+function AlertMockup() {
+  return (
+    <div className="w-72 space-y-3">
+      {[
+        { product: "Filet de saumon", change: "+14.2%", recipes: "Tartare, Pavé grillé", impact: "−3.2 pts de marge" },
+        { product: "Huile d'olive", change: "+5.1%", recipes: "Salade, Pasta", impact: "−0.9 pts de marge" },
+      ].map((alert, i) => (
+        <motion.div key={i} initial={{ opacity: 0, y: 10, scale: 0.97 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.15 }} className="card rounded-2xl p-4 border-l-4 border-blue-500">
+          <div className="flex justify-between items-start mb-1.5">
+            <span className="text-slate-800 font-semibold text-sm">{alert.product}</span>
+            <span className="text-red-500 font-bold text-sm font-mono bg-red-50 px-2 py-0.5 rounded-lg">{alert.change}</span>
+          </div>
+          <p className="text-xs text-slate-400 mb-2">Recettes : {alert.recipes}</p>
+          <div className="flex items-center gap-1.5">
+            <TrendingDown size={11} className="text-blue-500" />
+            <span className="text-blue-600 text-xs font-semibold">{alert.impact}</span>
+          </div>
+        </motion.div>
+      ))}
+      <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.4 }} className="glass-blue rounded-xl p-3 text-center">
+        <span className="text-xs text-slate-500">💡 Récupérez </span>
+        <span className="text-xs text-blue-600 font-semibold">+1 840€/mois</span>
+        <span className="text-xs text-slate-500"> en ajustant votre carte</span>
+      </motion.div>
+    </div>
+  );
+}
+
+// ─── Benefits ─────────────────────────────────────────────
+function BenefitsSection() {
+  const benefits = [
+    { Icon: Clock, title: "2 min au lieu de 2 heures", description: "Fini les tableurs Excel et la saisie manuelle. Une photo, et c'est fait. Vos équipes se concentrent sur ce qui compte.", metric: "−95%", metricLabel: "de temps de contrôle" },
+    { Icon: TrendingUp, title: "Retrouvez vos points de marge", description: "Nos utilisateurs récupèrent en moyenne 3 à 5 points de marge dès les 6 premières semaines en ajustant leurs prix à temps.", metric: "+4 pts", metricLabel: "de marge en moyenne" },
+    { Icon: ShieldCheck, title: "Zéro surprise en fin de mois", description: "Votre P&L ne vous réserve plus de mauvaises surprises. Chaque livraison est contrôlée. Vous gérez, vous ne subissez pas.", metric: "100%", metricLabel: "des livraisons contrôlées" },
+  ];
+
+  return (
+    <section id="benefices" className="py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+        {/* Avant / Après */}
+        <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="grid md:grid-cols-2 gap-6 mb-20">
+          <div className="card rounded-2xl p-8 border-l-4 border-red-300">
+            <p className="text-red-500 text-xs font-semibold uppercase tracking-widest mb-5">Avant MargeChef</p>
+            <ul className="space-y-3">
+              {["Vous découvrez la hausse 2 mois après", "Vous avez servi 400 couverts à perte", "Vos fiches techniques sont obsolètes", "Votre comptable vous annonce le manque"].map((item, i) => (
+                <li key={i} className="flex items-center gap-2 text-slate-500 text-sm">
+                  <X size={14} className="text-red-400 flex-shrink-0" /> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="card rounded-2xl p-8 border-l-4 border-blue-400">
+            <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-5">Avec MargeChef</p>
+            <ul className="space-y-3">
+              {["Alerte le jour même de la livraison", "Vous ajustez votre prix de vente immédiatement", "Fiches techniques mises à jour automatiquement", "Votre marge reste sous contrôle 24h/24"].map((item, i) => (
+                <li key={i} className="flex items-center gap-2 text-slate-700 text-sm">
+                  <CheckCircle2 size={14} className="text-blue-500 flex-shrink-0" /> {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          {benefits.map(({ Icon, title, description, metric, metricLabel }, i) => (
+            <motion.div key={i} initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.12 }} className="card rounded-2xl p-7 card-hover flex flex-col">
+              <div className="w-11 h-11 glass-blue rounded-xl flex items-center justify-center mb-5">
+                <Icon size={20} className="text-blue-600" />
+              </div>
+              <div className="mb-3">
+                <span className="text-3xl font-bold gradient-text font-mono">{metric}</span>
+                <span className="text-slate-400 text-sm ml-2">{metricLabel}</span>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-3">{title}</h3>
+              <p className="text-slate-500 text-sm leading-relaxed flex-1">{description}</p>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Story section ────────────────────────────────────────
+function StorySection() {
+  return (
+    <section className="py-24 px-5">
+      <div className="max-w-4xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="card rounded-3xl p-10 md:p-14 relative overflow-hidden">
+          <div className="absolute top-5 right-8 text-8xl text-blue-100 font-serif leading-none select-none">"</div>
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex -space-x-3">
+              {["#2563EB", "#4F46E5", "#0EA5E9"].map((color, i) => (
+                <div key={i} className="w-10 h-10 rounded-full border-2 border-white flex items-center justify-center" style={{ background: `${color}18`, borderColor: color }}>
+                  <ChefHat size={15} style={{ color }} />
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="text-slate-900 text-sm font-semibold">L'équipe MargeChef</p>
+              <p className="text-slate-400 text-xs">Anciens restaurateurs · Paris & Lyon</p>
+            </div>
+          </div>
+          <blockquote className="text-slate-800 text-xl md:text-2xl font-medium leading-relaxed mb-6">
+            On a géré des restaurants pendant{" "}
+            <span className="gradient-text font-bold">15 ans</span>. On a vécu cette douleur chaque mois — découvrir trop tard que le coût matière avait explosé, qu'on avait servi 300 couverts à perte parce que le saumon avait pris 12% et qu'on ne l'avait pas vu.
+          </blockquote>
+          <p className="text-slate-500 leading-relaxed mb-4">On a construit MargeChef parce que cet outil n'existait pas. On voulait quelque chose d'aussi simple qu'un SMS — une photo, une alerte. Rien de plus.</p>
+          <p className="text-slate-500 leading-relaxed">Aujourd'hui, MargeChef surveille les marges pendant que vous cuisinez, servez et gérez votre équipe. C'est ça, la restauration moderne.</p>
+          <div className="flex items-center gap-1 mt-8">
+            {Array(5).fill(0).map((_, i) => <Star key={i} size={16} className="text-amber-400 fill-amber-400" />)}
+            <span className="text-slate-400 text-sm ml-2">4.9/5 · 120+ restaurants</span>
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Security section ─────────────────────────────────────
+function SecuritySection() {
+  const items = [
+    { Icon: Lock, title: "Chiffrement bout-en-bout", text: "Vos données et factures sont chiffrées AES-256 au repos et en transit. Personne d'autre que vous n'y accède." },
+    { Icon: Server, title: "Hébergé en Europe", text: "Infrastructure AWS eu-west-3 (Paris). Conformité RGPD native. Aucune donnée ne sort de l'Union Européenne." },
+    { Icon: ShieldCheck, title: "Sans mot de passe", text: "Accès par Magic Link uniquement. Pas de mot de passe à retenir, pas de risque de fuite de credentials." },
+    { Icon: CheckCircle2, title: "Vos données vous appartiennent", text: "Export complet à tout moment. Suppression totale sur demande sous 48h. Aucune revente, jamais." },
+  ];
+
+  return (
+    <section id="securite" className="py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+        <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-14">
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Sécurité</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
+            Vos données sont entre de <span className="gradient-text">bonnes mains</span>
+          </h2>
+          <p className="text-slate-500 max-w-lg mx-auto">Nous avons conçu MargeChef avec la même exigence que nous avions pour nos restaurants — zéro compromis.</p>
+        </motion.div>
+        <div className="grid md:grid-cols-2 gap-5">
+          {items.map(({ Icon, title, text }, i) => (
+            <motion.div key={i} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="card rounded-2xl p-6 flex gap-4 card-hover">
+              <div className="w-10 h-10 glass-blue rounded-xl flex items-center justify-center flex-shrink-0">
+                <Icon size={18} className="text-blue-600" />
+              </div>
+              <div>
+                <h3 className="text-slate-900 font-semibold mb-1.5">{title}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">{text}</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── CTA Modal ────────────────────────────────────────────
+function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    setStatus("loading");
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
+    });
+    setStatus(error ? "error" : "done");
+  };
+
+  return (
+    <AnimatePresence>
+      {show && (
+        <>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-sm" />
+          <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ type: "spring", damping: 28, stiffness: 320 }} className="fixed inset-0 z-50 flex items-center justify-center p-5">
+            <div className="w-full max-w-md glass rounded-3xl p-8 relative shadow-blue-lg">
+              <button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 transition-colors">
+                <X size={20} />
+              </button>
+              {status === "done" ? (
+                <div className="text-center py-4">
+                  <div className="w-16 h-16 glass-blue rounded-full flex items-center justify-center mx-auto mb-5">
+                    <CheckCircle2 size={32} className="text-blue-600" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-900 mb-2">Vérifiez vos emails</h3>
+                  <p className="text-slate-500 text-sm">Un lien de connexion a été envoyé à <span className="text-slate-800 font-medium">{email}</span>. Cliquez dessus pour accéder à votre espace.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="text-center mb-7">
+                    <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <ChefHat size={26} className="text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrez gratuitement</h3>
+                    <p className="text-slate-500 text-sm">14 jours d'essai · Sans carte bancaire · Sans mot de passe</p>
+                  </div>
+                  <form onSubmit={handleSubmit} className="space-y-4">
+                    <input
+                      type="email" required value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      placeholder="votre@email.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+                    />
+                    <button type="submit" disabled={status === "loading"} className="btn-primary w-full py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-70 text-sm">
+                      {status === "loading" ? (
+                        <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Envoi…</>
+                      ) : (
+                        <>Recevoir mon lien de connexion <ArrowRight size={16} /></>
+                      )}
+                    </button>
+                    {status === "error" && <p className="text-red-500 text-xs text-center">Erreur. Vérifiez votre adresse email.</p>}
+                  </form>
+                  <p className="text-center text-slate-400 text-xs mt-5">
+                    En continuant, vous acceptez nos <a href="#" className="underline hover:text-slate-600">CGU</a> et notre <a href="#" className="underline hover:text-slate-600">politique de confidentialité</a>.
+                  </p>
+                </>
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
+// ─── Final CTA banner ─────────────────────────────────────
+function FinalCTABanner({ onCTA }: { onCTA: () => void }) {
+  return (
+    <section className="py-24 px-5">
+      <motion.div initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-4xl mx-auto rounded-3xl p-12 text-center relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8 0%, #2563EB 40%, #4F46E5 100%)" }}>
+        {/* Shine overlay */}
+        <div className="absolute inset-0 rounded-3xl" style={{ background: "radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 60%)" }} />
+        <div className="relative">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            Chaque jour sans MargeChef<br />
+            <span className="text-blue-200">est un jour à perte</span>
+          </h2>
+          <p className="text-blue-200 mb-8 max-w-md mx-auto">Rejoignez 120+ restaurateurs qui protègent leur marge automatiquement. Démarrez en 2 minutes.</p>
+          <button onClick={onCTA} className="bg-white text-blue-700 font-bold px-10 py-4 rounded-2xl text-base inline-flex items-center gap-2.5 group shadow-glass hover:shadow-card-hover transition-all hover:-translate-y-0.5">
+            Essayer MargeChef gratuitement
+            <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      </motion.div>
+    </section>
+  );
+}
+
+// ─── Footer ───────────────────────────────────────────────
+function Footer() {
+  return (
+    <footer className="border-t border-slate-100 py-10 px-5 bg-white/50">
+      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+        <div className="flex items-center gap-2">
+          <ChefHat size={15} className="text-blue-600" />
+          <span className="font-medium text-slate-600">MargeChef</span>
+          <span className="text-slate-200">·</span>
+          <span>Fait avec ❤️ par des restaurateurs</span>
+        </div>
+        <div className="flex gap-6">
+          {["CGU", "Confidentialité", "Contact"].map(link => (
+            <a key={link} href="#" className="hover:text-slate-700 transition-colors">{link}</a>
+          ))}
+        </div>
+        <p>© 2025 MargeChef. Tous droits réservés.</p>
+      </div>
+    </footer>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────
+export default function LandingPage() {
+  const [showCTA, setShowCTA] = useState(false);
+  return (
+    <>
+      <ShaderBackground />
+      <Nav onCTA={() => setShowCTA(true)} />
+      <main>
+        <HeroSection onCTA={() => setShowCTA(true)} />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <StatsSection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <HowItWorksSection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <BenefitsSection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <StorySection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <SecuritySection />
+        <FinalCTABanner onCTA={() => setShowCTA(true)} />
+      </main>
+      <Footer />
+      <CTASection show={showCTA} onClose={() => setShowCTA(false)} />
+    </>
+  );
+}

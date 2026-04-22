@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ─────────────────────────────────────────────── */
+:root {
+  --bg: #F7F9FF;
+  --surface: #FFFFFF;
+  --brand-blue: 37, 99, 235;
+  --brand-indigo: 79, 70, 229;
+  --text: #0F172A;
+  --text-secondary: #475569;
+  --text-muted: #94A3B8;
+  --border: rgba(0, 0, 0, 0.07);
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: var(--bg);
+  color: var(--text);
+}
+
+/* ─── Typography utilities ──────────────────────────────── */
+@layer utilities {
+
+  /* Gradient text — blue/indigo */
+  .gradient-text {
+    background: linear-gradient(135deg, #2563EB 0%, #4F46E5 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .gradient-text-sky {
+    background: linear-gradient(135deg, #0EA5E9 0%, #2563EB 60%, #4F46E5 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Glassmorphism (light theme) ──────────────────────── */
+  .glass {
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06), 0 1px 0 rgba(255, 255, 255, 1) inset;
+  }
+
+  /* Nav variant — more opaque for legibility */
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(24px) saturate(2);
+    -webkit-backdrop-filter: blur(24px) saturate(2);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 2px 16px rgba(0, 0, 0, 0.04);
+  }
+
+  /* Blue-tinted glass for highlights */
+  .glass-blue {
+    background: rgba(37, 99, 235, 0.05);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+  }
+
+  /* White card with shadow */
+  .card {
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.05), 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+
+  /* ── Buttons ──────────────────────────────────────────── */
+  .btn-primary {
+    background: linear-gradient(145deg, #3B82F6 0%, #2563EB 50%, #4338CA 100%);
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.38), 0 1px 0 rgba(255, 255, 255, 0.2) inset;
+    transition: all 0.2s ease;
+    color: white;
+    font-weight: 600;
+  }
+
+  .btn-primary:hover {
+    background: linear-gradient(145deg, #60A5FA 0%, #3B82F6 50%, #4F46E5 100%);
+    box-shadow: 0 6px 28px rgba(37, 99, 235, 0.5), 0 1px 0 rgba(255, 255, 255, 0.25) inset;
+    transform: translateY(-1px);
+  }
+
+  .btn-primary:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 12px rgba(37, 99, 235, 0.35);
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    color: #1e40af;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .btn-secondary:hover {
+    background: #FFFFFF;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+  }
+
+  /* ── Glow ─────────────────────────────────────────────── */
+  .glow-blue {
+    box-shadow: 0 0 40px rgba(37, 99, 235, 0.2), 0 0 80px rgba(37, 99, 235, 0.08);
+  }
+
+  .glow-blue-sm {
+    box-shadow: 0 0 20px rgba(37, 99, 235, 0.3), 0 4px 12px rgba(37, 99, 235, 0.2);
+  }
+
+  /* ── Card hover ───────────────────────────────────────── */
+  .card-hover {
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .card-hover:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+    border-color: rgba(37, 99, 235, 0.15);
+  }
+
+  /* ── Step badge ───────────────────────────────────────── */
+  .step-badge {
+    background: linear-gradient(135deg, rgba(37,99,235,0.1), rgba(79,70,229,0.08));
+    border: 1px solid rgba(37, 99, 235, 0.2);
+    color: #2563EB;
+  }
+
+  /* ── Divider ──────────────────────────────────────────── */
+  .divider-gradient {
+    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.15), transparent);
+    height: 1px;
+  }
+
+  /* ── Scan animation ───────────────────────────────────── */
+  .scan-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #2563EB, #818CF8, #2563EB, transparent);
+    animation: scanLine 2.2s ease-in-out infinite;
+    box-shadow: 0 0 12px rgba(37, 99, 235, 0.7);
+  }
+
+  /* ── Label/pill ───────────────────────────────────────── */
+  .label-blue {
+    background: rgba(37, 99, 235, 0.08);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+    color: #2563EB;
+  }
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: rgba(37, 99, 235, 0.2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(37, 99, 235, 0.4); }
+
+/* ─── Selection ─────────────────────────────────────────── */
+::selection { background: rgba(37, 99, 235, 0.15); color: #1e40af; }
+
+/* ─── Focus ring ────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.6);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ─── Noise overlay ─────────────────────────────────────── */
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.018;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
