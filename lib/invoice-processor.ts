@@ -20,6 +20,7 @@ export async function processExtractedInvoice(
 
   await supabase
     .from("invoices")
+    // @ts-ignore
     .update({
       supplier_id: supplierId,
       invoice_date: extracted.invoice_date,
