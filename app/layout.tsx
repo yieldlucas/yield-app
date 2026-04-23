@@ -10,25 +10,25 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MargeChef — Protégez votre marge, automatiquement",
+  title: "YIELD — Rendement Garanti",
   description:
-    "Photographiez vos factures fournisseurs. L'IA analyse les prix, compare l'historique et vous alerte en temps réel quand votre marge est menacée.",
-  keywords: ["restaurant", "marge", "facture", "fournisseur", "inflation", "gestion"],
+    "Photographiez vos bons de livraison. L'IA analyse les prix matière et vous alerte en temps réel quand votre rendement est menacé.",
+  keywords: ["restaurant", "rendement", "marge", "bon de livraison", "fournisseur", "inflation", "food cost"],
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "MargeChef",
+    title: "YIELD",
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "MargeChef",
-    description: "La seule app qui surveille votre marge en temps réel.",
+    title: "YIELD",
+    description: "La seule app qui surveille votre rendement en temps réel.",
     type: "website",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F97316",
+  themeColor: "#2563EB",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1, // Empêche le zoom accidentel sur les formulaires mobiles

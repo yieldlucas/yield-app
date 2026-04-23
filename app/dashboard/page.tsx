@@ -1,4 +1,3 @@
-export const dynamic = 'force-dynamic';
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -6,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera, Bell, TrendingDown, ChefHat, LogOut,
   CheckCircle2, AlertTriangle, FileText, ChevronRight,
-  Sparkles,
+  Sparkles, MessageCircle,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
@@ -55,13 +54,67 @@ function ScannerFAB({ onScan }: { onScan: (file: File) => void }) {
         }}
       />
       <motion.button
-        whileTap={{ scale: 0.93 }}
+        whileTap={{ scale: 0.95 }}
         onClick={() => inputRef.current?.click()}
-        className="fixed bottom-6 right-5 z-30 w-16 h-16 btn-primary rounded-2xl flex items-center justify-center shadow-blue-lg"
-        aria-label="Scanner une facture"
+        className="fixed bottom-6 right-5 z-30 btn-primary rounded-2xl flex items-center gap-3 px-5 py-4 shadow-blue-lg"
+        aria-label="Scanner un bon de livraison"
       >
-        <Camera size={28} className="text-white" />
+        <Camera size={22} className="text-white" />
+        <span className="text-white font-bold text-sm">Scanner un BL</span>
       </motion.button>
+    </>
+  );
+}
+
+// ─── Conciergerie Chef ────────────────────────────────────
+function ConciergeButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <motion.button
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 1 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setOpen(v => !v)}
+        className="fixed bottom-6 left-5 z-30 w-14 h-14 glass rounded-2xl flex items-center justify-center shadow-card border border-blue-100"
+        aria-label="Conciergerie Chef"
+      >
+        <MessageCircle size={22} className="text-blue-600" />
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="fixed bottom-24 left-5 z-30 w-72 glass rounded-2xl p-5 shadow-card border border-blue-100"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 btn-primary rounded-xl flex items-center justify-center">
+                <ChefHat size={15} className="text-white" />
+              </div>
+              <div>
+                <p className="text-slate-900 text-sm font-semibold">Conciergerie Chef</p>
+                <div className="flex items-center gap-1 text-xs text-emerald-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                  Disponible maintenant
+                </div>
+              </div>
+            </div>
+            <p className="text-slate-500 text-xs leading-relaxed mb-4">
+              Un problème de scan ? Un doute sur un bon ? Notre équipe vous répond sous 2h.
+            </p>
+            <a
+              href="mailto:chef@yield.restaurant"
+              className="btn-primary w-full py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5"
+            >
+              <MessageCircle size={13} /> Contacter le concierge
+            </a>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -69,9 +122,9 @@ function ScannerFAB({ onScan }: { onScan: (file: File) => void }) {
 // ─── Upload overlay ───────────────────────────────────────
 function UploadOverlay({ status, onClose }: { status: UploadStatus; onClose: () => void }) {
   const stages = [
-    { key: "uploading", label: "Upload de la facture…" },
-    { key: "processing", label: "L'IA analyse les prix…" },
-    { key: "done", label: "Analyse terminée !" },
+    { key: "uploading", label: "Envoi du bon de livraison…" },
+    { key: "processing", label: "Lecture des prix matière…" },
+    { key: "done", label: "Bilan généré !" },
   ];
   const order = ["uploading", "processing", "done"];
 
@@ -85,8 +138,8 @@ function UploadOverlay({ status, onClose }: { status: UploadStatus; onClose: () 
                 <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <AlertTriangle size={28} className="text-red-500" />
                 </div>
-                <h3 className="text-slate-900 font-bold text-lg mb-2">Échec de l'analyse</h3>
-                <p className="text-slate-500 text-sm mb-6">L'image n'a pas pu être lue. Essayez avec une meilleure luminosité.</p>
+                <h3 className="text-slate-900 font-bold text-lg mb-2">Lecture impossible</h3>
+                <p className="text-slate-500 text-sm mb-6">Le bon n&apos;a pas pu être lu. Essayez avec un meilleur éclairage.</p>
                 <button onClick={onClose} className="btn-primary w-full py-3 rounded-xl text-sm">Réessayer</button>
               </>
             ) : (
@@ -164,11 +217,11 @@ function AlertCard({ alert }: { alert: Alert }) {
         {expanded && alert.affected_recipes?.length > 0 && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Recettes impactées</p>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Fiches techniques impactées</p>
               {alert.affected_recipes.map((r, i) => (
                 <div key={i} className="flex items-center justify-between text-xs">
                   <span className="text-slate-600">{r.name}</span>
-                  <span className="text-blue-600 font-mono font-semibold">−{Math.abs(r.margin_impact_pts).toFixed(1)} pts</span>
+                  <span className="text-blue-600 font-mono font-semibold">−{Math.abs(r.margin_impact_pts).toFixed(1)} pts rendement</span>
                 </div>
               ))}
             </div>
@@ -187,7 +240,7 @@ function StatusBadge({ status }: { status: RecentInvoice["status"] }) {
     error: "bg-red-50 text-red-500",
     pending: "bg-slate-100 text-slate-500",
   };
-  const labels = { processed: "Analysée", processing: "En cours", error: "Erreur", pending: "En attente" };
+  const labels = { processed: "Traitée", processing: "Analyse en cours", error: "Erreur", pending: "En attente" };
   return (
     <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${map[status]}`}>
       {labels[status]}
@@ -233,7 +286,7 @@ export default function DashboardPage() {
       },
     ]);
     setInvoices([
-      { id: "1", supplier_name: "Metro Cash & Carry", invoice_date: "2025-04-21", status: "processed", items_count: 12 },
+      { id: "1", supplier_name: "Metro Cash & Carry", invoice_date: "2026-04-22", status: "processed", items_count: 12 },
     ]);
   };
 
@@ -267,9 +320,7 @@ export default function DashboardPage() {
             <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
               <ChefHat size={16} className="text-white" />
             </div>
-            <span className="font-bold text-slate-900 text-base">
-              Marge<span className="gradient-text">Chef</span>
-            </span>
+            <span className="font-black text-base tracking-tight gradient-text">YIELD</span>
           </div>
           <div className="flex items-center gap-3">
             {unreadCount > 0 && (
@@ -310,9 +361,9 @@ export default function DashboardPage() {
               <div className="w-16 h-16 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4 glow-blue-sm">
                 <Camera size={32} className="text-white" />
               </div>
-              <h2 className="text-xl font-bold text-slate-900 mb-2">Scanner ma facture</h2>
+              <h2 className="text-xl font-bold text-slate-900 mb-2">Scanner mon bon de livraison</h2>
               <p className="text-slate-500 text-sm">
-                Photographiez votre facture fournisseur. L'IA fait le reste en 30 secondes.
+                Photographiez votre bon de livraison. L&apos;IA calcule l&apos;impact matière en 30 secondes.
               </p>
               <div className="mt-5 flex items-center justify-center gap-1.5 text-blue-600 text-sm font-semibold">
                 Commencer <ChevronRight size={16} />
@@ -321,7 +372,7 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Résumé marge — si données */}
+        {/* Bilan Matière */}
         {alerts.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
             <div className="rounded-2xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8, #2563EB 50%, #4F46E5)" }}>
@@ -329,21 +380,21 @@ export default function DashboardPage() {
               <div className="relative">
                 <div className="flex items-center gap-2 mb-3">
                   <Sparkles size={15} className="text-blue-200" />
-                  <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">Résumé marge</span>
+                  <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">Bilan Matière</span>
                 </div>
-                <p className="text-2xl font-bold mb-1">{unreadCount} alerte{unreadCount > 1 ? "s" : ""} active{unreadCount > 1 ? "s" : ""}</p>
-                <p className="text-blue-200 text-sm">Vérifiez les produits dont le prix a varié</p>
+                <p className="text-2xl font-bold mb-1">{unreadCount} alerte{unreadCount > 1 ? "s" : ""} rendement</p>
+                <p className="text-blue-200 text-sm">Des variations de coût matière ont été détectées</p>
               </div>
             </div>
           </motion.div>
         )}
 
-        {/* Alertes */}
+        {/* Alertes Rendement */}
         {alerts.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-slate-900 font-semibold text-base">
-                Alertes marge
+                Alertes Rendement
                 {unreadCount > 0 && (
                   <span className="ml-2 text-xs label-blue px-2 py-0.5 rounded-full">
                     {unreadCount} nouvelle{unreadCount > 1 ? "s" : ""}
@@ -357,16 +408,16 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Factures récentes */}
+        {/* Bons de Livraison */}
         {invoices.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-slate-900 font-semibold text-base">Factures récentes</h2>
+              <h2 className="text-slate-900 font-semibold text-base">Bons de Livraison</h2>
               <button
                 onClick={() => document.querySelector<HTMLInputElement>("input[capture]")?.click()}
                 className="label-blue text-xs px-3 py-1.5 rounded-full font-semibold flex items-center gap-1"
               >
-                <Camera size={12} /> Nouvelle
+                <Camera size={12} /> Scanner
               </button>
             </div>
             <div className="space-y-3">
@@ -386,17 +437,18 @@ export default function DashboardPage() {
           </motion.div>
         )}
 
-        {/* Tout va bien */}
+        {/* Rendement nominal */}
         {!loading && alerts.length === 0 && invoices.length > 0 && (
           <div className="card rounded-2xl p-6 text-center">
             <CheckCircle2 size={28} className="text-blue-500 mx-auto mb-3" />
-            <p className="text-slate-900 font-semibold mb-1">Tout va bien !</p>
-            <p className="text-slate-400 text-sm">Aucune variation de prix détectée sur votre dernière livraison.</p>
+            <p className="text-slate-900 font-semibold mb-1">Rendement nominal.</p>
+            <p className="text-slate-400 text-sm">Aucune dérive matière détectée. Votre food cost est stable.</p>
           </div>
         )}
       </div>
 
       <ScannerFAB onScan={handleScan} />
+      <ConciergeButton />
       <UploadOverlay status={uploadStatus} onClose={() => setUploadStatus("idle")} />
     </div>
   );

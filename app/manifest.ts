@@ -2,14 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "MargeChef — Protégez votre marge",
-    short_name: "MargeChef",
+    name: "YIELD — Rendement Garanti",
+    short_name: "YIELD",
     description:
-      "Photographiez vos factures fournisseurs. L'IA analyse les prix et vous alerte en temps réel quand votre marge est menacée.",
+      "Photographiez vos bons de livraison. L'IA analyse les prix matière et vous alerte en temps réel quand votre rendement est menacé.",
     start_url: "/dashboard",
     display: "standalone",
-    background_color: "#060608",
-    theme_color: "#F97316",
+    background_color: "#F7F9FF",
+    theme_color: "#2563EB",
     orientation: "portrait-primary",
     categories: ["business", "productivity", "food"],
     lang: "fr",
@@ -35,16 +35,16 @@ export default function manifest(): MetadataRoute.Manifest {
     ],
     shortcuts: [
       {
-        name: "Scanner une facture",
+        name: "Scanner un bon de livraison",
         short_name: "Scanner",
-        description: "Photographier une facture fournisseur",
+        description: "Photographier un bon de livraison fournisseur",
         url: "/dashboard?action=scan",
         icons: [{ src: "/icons/shortcut-camera.png", sizes: "96x96" }],
       },
       {
-        name: "Mes alertes",
+        name: "Alertes Rendement",
         short_name: "Alertes",
-        description: "Voir les alertes de marge",
+        description: "Voir les alertes de coût matière",
         url: "/dashboard#alertes",
         icons: [{ src: "/icons/shortcut-bell.png", sizes: "96x96" }],
       },
@@ -54,7 +54,7 @@ export default function manifest(): MetadataRoute.Manifest {
         src: "/screenshots/dashboard.png",
         sizes: "390x844",
         form_factor: "narrow",
-        label: "Tableau de bord MargeChef",
+        label: "Tableau de bord YIELD",
       },
     ],
   };

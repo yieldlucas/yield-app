@@ -5,7 +5,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion"
 import {
   Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
   TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight,
-  CheckCircle2, Star, Menu, X, Sparkles,
+  CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -32,11 +32,15 @@ function useCounter(target: number, duration = 1800, active = false) {
   return count;
 }
 
-// ─── Shader background (light) ───────────────────────────
+// ─── Shader background ───────────────────────────────────
 function ShaderBackground() {
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden noise" style={{ background: "#F7F9FF" }}>
-      {/* Blob indigo — top left */}
+      {/* Subtle kitchen grid — carnet de recettes */}
+      <div className="absolute inset-0" style={{
+        backgroundImage: "linear-gradient(rgba(37,99,235,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(37,99,235,0.025) 1px, transparent 1px)",
+        backgroundSize: "40px 40px",
+      }} />
       <div className="absolute animate-blob-1" style={{
         width: 800, height: 700,
         borderRadius: "60% 40% 30% 70% / 60% 30% 70% 40%",
@@ -44,7 +48,6 @@ function ShaderBackground() {
         top: "-20%", left: "-15%",
         filter: "blur(80px)",
       }} />
-      {/* Blob blue — bottom right */}
       <div className="absolute animate-blob-2" style={{
         width: 900, height: 700,
         borderRadius: "30% 70% 70% 30% / 30% 52% 48% 70%",
@@ -52,7 +55,6 @@ function ShaderBackground() {
         bottom: "-25%", right: "-20%",
         filter: "blur(100px)",
       }} />
-      {/* Blob sky — center */}
       <div className="absolute animate-blob-3" style={{
         width: 600, height: 600,
         borderRadius: "50%",
@@ -85,36 +87,26 @@ function Nav({ onCTA }: { onCTA: () => void }) {
       }`}
     >
       <div className="max-w-6xl mx-auto px-5 flex items-center justify-between">
-        {/* Logo */}
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
             <ChefHat size={17} className="text-white" />
           </div>
-          <span className="font-bold text-slate-900 tracking-tight text-lg">
-            Marge<span className="gradient-text">Chef</span>
-          </span>
+          <span className="font-black text-lg tracking-tight gradient-text">YIELD</span>
         </div>
 
-        {/* Desktop links */}
         <div className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-500">
-          <a href="#comment" className="hover:text-slate-900 transition-colors">Comment ça marche</a>
-          <a href="#benefices" className="hover:text-slate-900 transition-colors">Bénéfices</a>
+          <a href="#comment" className="hover:text-slate-900 transition-colors">Fonctionnement</a>
+          <a href="#roi" className="hover:text-slate-900 transition-colors">ROI</a>
           <a href="#securite" className="hover:text-slate-900 transition-colors">Sécurité</a>
         </div>
 
         <div className="hidden md:flex items-center gap-3">
-          <button
-            onClick={onCTA}
-            className="btn-primary text-sm px-5 py-2.5 rounded-xl"
-          >
-            Essayer gratuitement
+          <button onClick={onCTA} className="btn-primary text-sm px-5 py-2.5 rounded-xl">
+            Démarrer le service
           </button>
         </div>
 
-        <button
-          className="md:hidden text-slate-500"
-          onClick={() => setMobileOpen(v => !v)}
-        >
+        <button className="md:hidden text-slate-500" onClick={() => setMobileOpen(v => !v)}>
           {mobileOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
@@ -128,11 +120,11 @@ function Nav({ onCTA }: { onCTA: () => void }) {
             className="md:hidden glass-nav overflow-hidden"
           >
             <div className="px-5 py-4 flex flex-col gap-4 text-sm font-medium text-slate-600">
-              <a href="#comment" onClick={() => setMobileOpen(false)}>Comment ça marche</a>
-              <a href="#benefices" onClick={() => setMobileOpen(false)}>Bénéfices</a>
+              <a href="#comment" onClick={() => setMobileOpen(false)}>Fonctionnement</a>
+              <a href="#roi" onClick={() => setMobileOpen(false)}>ROI</a>
               <a href="#securite" onClick={() => setMobileOpen(false)}>Sécurité</a>
               <button onClick={onCTA} className="btn-primary py-3 rounded-xl text-sm">
-                Essayer gratuitement
+                Démarrer le service
               </button>
             </div>
           </motion.div>
@@ -153,18 +145,16 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
     <section ref={ref} className="relative min-h-screen flex flex-col items-center justify-center text-center px-5 pt-24">
       <motion.div style={{ y, opacity }} className="max-w-4xl mx-auto">
 
-        {/* Badge */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.6 }}
           className="inline-flex items-center gap-2 label-blue rounded-full px-4 py-2 text-sm font-medium mb-8"
         >
-          <Sparkles size={14} className="text-blue-500" />
-          Créé par d'anciens restaurateurs, pour les restaurateurs
+          <Timer size={14} className="text-blue-500" />
+          Précision chef. Rendement garanti.
         </motion.div>
 
-        {/* Headline */}
         <motion.h1
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -176,20 +166,17 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           <span className="gradient-text">En silence.</span>
         </motion.h1>
 
-        {/* Sub */}
         <motion.p
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35, duration: 0.7 }}
           className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto leading-relaxed mb-10"
         >
-          Chaque fois qu'un fournisseur augmente ses prix, votre marge diminue
-          sans que vous le sachiez. MargeChef détecte ces glissements
-          automatiquement, en{" "}
-          <span className="text-slate-800 font-semibold">moins de 30 secondes</span>.
+          À chaque livraison, vos fournisseurs ajustent leurs tarifs.{" "}
+          <span className="text-slate-800 font-semibold">YIELD lit vos bons de livraison en 30 secondes</span>{" "}
+          et vous alerte avant que votre rendement ne s&apos;effondre.
         </motion.p>
 
-        {/* CTAs */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -200,26 +187,21 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
             onClick={onCTA}
             className="btn-primary w-full sm:w-auto text-base px-8 py-4 rounded-2xl flex items-center justify-center gap-2.5 group"
           >
-            Protéger ma marge maintenant
+            Démarrer le service — gratuit
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
           <a href="#comment" className="text-slate-400 hover:text-slate-700 text-sm font-medium flex items-center gap-1.5 transition-colors">
-            Voir comment ça marche
+            Comment ça marche
           </a>
         </motion.div>
 
-        {/* Social proof */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.75 }}
           className="mt-12 flex items-center justify-center gap-6 flex-wrap"
         >
-          {[
-            "Sans carte bancaire",
-            "RGPD · Hébergé en Europe",
-            "14 jours d'essai offerts",
-          ].map((text, i) => (
+          {["Sans carte bancaire", "RGPD · Hébergé en Europe", "14 jours offerts"].map((text, i) => (
             <div key={i} className="flex items-center gap-1.5 text-sm text-slate-400">
               <CheckCircle2 size={14} className="text-blue-500" />
               {text}
@@ -227,7 +209,7 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           ))}
         </motion.div>
 
-        {/* Floating mockup card preview */}
+        {/* Floating mockup */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
@@ -237,13 +219,13 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           <div className="glass card-hover rounded-3xl p-5 text-left">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 rounded-full bg-blue-500" />
-              <span className="text-xs text-slate-500 font-medium">Analyse en cours — Metro Cash & Carry</span>
+              <span className="text-xs text-slate-500 font-medium">Analyse BL — Metro Cash &amp; Carry</span>
             </div>
             <div className="space-y-2.5">
               {[
                 { name: "Filet de saumon", change: "+14.2%", bad: true },
                 { name: "Tomates cerises", change: "+3.5%", bad: true },
-                { name: "Beurre doux", change: "−1.0%", bad: false },
+                { name: "Beurre doux AOP", change: "−1.0%", bad: false },
               ].map((item, i) => (
                 <div key={i} className="flex items-center justify-between">
                   <span className="text-sm text-slate-700">{item.name}</span>
@@ -255,14 +237,13 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
             </div>
             <div className="mt-4 pt-4 border-t border-slate-100">
               <div className="btn-primary text-center text-xs py-2 rounded-xl">
-                2 alertes marge générées
+                2 alertes rendement générées
               </div>
             </div>
           </div>
         </motion.div>
       </motion.div>
 
-      {/* Scroll indicator */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -281,7 +262,7 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
   );
 }
 
-// ─── Stats section ────────────────────────────────────────
+// ─── Stats ────────────────────────────────────────────────
 function StatsSection() {
   const ref = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(false);
@@ -302,9 +283,9 @@ function StatsSection() {
   const k = useCounter(12, 2000, active);
 
   const stats = [
-    { value: `${pct}%`, label: "de marge perdue en moyenne chaque année à cause de l'inflation non répercutée", Icon: TrendingDown, color: "text-red-500" },
-    { value: `${hours}h`, label: "perdues chaque semaine à vérifier manuellement les prix fournisseurs", Icon: Clock, color: "text-amber-500" },
-    { value: `${k}k€`, label: "de manque à gagner annuel pour un restaurant avec 500 k€ de chiffre d'affaires", Icon: Euro, color: "text-blue-600" },
+    { value: `${pct}%`, label: "de rendement net perdu chaque année à cause des hausses fournisseurs non détectées", Icon: TrendingDown, color: "text-red-500" },
+    { value: `${hours}h`, label: "par semaine perdues à vérifier manuellement vos coûts matière", Icon: Clock, color: "text-amber-500" },
+    { value: `${k}k€`, label: "de manque à gagner annuel sur 500 k€ de chiffre d'affaires", Icon: Euro, color: "text-blue-600" },
   ];
 
   return (
@@ -316,8 +297,8 @@ function StatsSection() {
           viewport={{ once: true }}
           className="text-center mb-14"
         >
-          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Le problème en chiffres</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">L'inflation silencieuse qui ronge vos marges</h2>
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Le constat net</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">L&apos;inflation silencieuse qui ronge votre rendement</h2>
         </motion.div>
 
         <div className="grid md:grid-cols-3 gap-6">
@@ -346,26 +327,26 @@ function HowItWorksSection() {
   const steps = [
     {
       number: "01", Icon: Camera,
-      title: "Photographiez votre facture",
-      subtitle: "Depuis votre téléphone, en 5 secondes",
-      description: "À réception de votre livraison, ouvrez MargeChef et prenez la facture en photo. Pas de saisie manuelle, pas de CSV. Juste une photo.",
+      title: "Photographiez votre bon de livraison",
+      subtitle: "En cuisine, à réception, en 5 secondes",
+      description: "À réception de la marchandise, ouvrez YIELD et photographiez le bon. Pas de tableur, pas de ressaisie. La matière première est immédiatement sous contrôle.",
       detail: "Compatible Metro, Promocash, Transgourmet, grossistes locaux et toute facture PDF.",
       mockup: <InvoiceMockup />,
     },
     {
       number: "02", Icon: Zap,
-      title: "L'IA analyse en 30 secondes",
+      title: "Lecture IA en 30 secondes chrono",
       subtitle: "Claude Vision lit, compare, calcule",
-      description: "Notre IA extrait chaque ligne, identifie les produits et les compare instantanément à vos prix historiques. Aucune action de votre part.",
-      detail: "Précision > 97% sur les factures manuscrites et imprimées. TVA détectée automatiquement.",
+      description: "Notre IA extrait chaque ligne de matière première, identifie les produits et compare instantanément avec vos prix historiques. Aucune action de votre part.",
+      detail: "Précision > 97% sur les bons manuscrits et imprimés. TVA détectée automatiquement.",
       mockup: <AIMockup />,
     },
     {
       number: "03", Icon: Bell,
-      title: "Alerte immédiate si ça dépasse 3%",
-      subtitle: "Votre marge protégée en temps réel",
-      description: "Dès qu'un prix augmente de plus de 3%, vous recevez une notification avec l'impact exact sur vos fiches techniques.",
-      detail: "Visualisez quelles recettes sont impactées et de combien de points de marge.",
+      title: "Alerte rendement si la variation dépasse 3%",
+      subtitle: "Votre rendement protégé en temps réel",
+      description: "Dès qu'un prix matière dépasse le seuil, YIELD calcule l'impact net sur chaque fiche technique. Vous ajustez votre carte avant le prochain coup de feu.",
+      detail: "Visualisez quelles fiches techniques sont impactées et de combien de points.",
       mockup: <AlertMockup />,
     },
   ];
@@ -379,11 +360,11 @@ function HowItWorksSection() {
           viewport={{ once: true }}
           className="text-center mb-20"
         >
-          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Comment ça marche</p>
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Fonctionnement</p>
           <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
-            3 étapes. <span className="gradient-text">Zéro friction.</span>
+            3 étapes. <span className="gradient-text">Chrono.</span>
           </h2>
-          <p className="text-slate-500 max-w-xl mx-auto">Conçu par des restaurateurs qui n'ont pas de temps à perdre.</p>
+          <p className="text-slate-500 max-w-xl mx-auto">Conçu pour le terrain. Pour le coup de feu. Pour le Chef.</p>
         </motion.div>
 
         <div className="space-y-28">
@@ -419,7 +400,7 @@ function HowItWorksSection() {
   );
 }
 
-// ─── Mockups (light theme) ───────────────────────────────
+// ─── Mockups ──────────────────────────────────────────────
 function InvoiceMockup() {
   return (
     <div className="relative w-64 h-80 card rounded-3xl overflow-hidden shadow-card">
@@ -438,7 +419,7 @@ function InvoiceMockup() {
         <div className="absolute inset-x-0 top-6" style={{ height: "calc(100% - 24px)" }}>
           <div className="scan-line" />
         </div>
-        {[["top-2 left-2","border-t-2 border-l-2"],["top-2 right-2","border-t-2 border-r-2"],["bottom-2 left-2","border-b-2 border-l-2"],["bottom-2 right-2","border-b-2 border-r-2"]].map(([pos, border], i) => (
+        {[["top-2 left-2", "border-t-2 border-l-2"], ["top-2 right-2", "border-t-2 border-r-2"], ["bottom-2 left-2", "border-b-2 border-l-2"], ["bottom-2 right-2", "border-b-2 border-r-2"]].map(([pos, border], i) => (
           <div key={i} className={`absolute ${pos} w-5 h-5 border-blue-500 ${border} rounded-sm`} />
         ))}
       </div>
@@ -456,13 +437,13 @@ function AIMockup() {
     { name: "Saumon", prev: "16.20€", curr: "18.50€", up: true },
     { name: "Tomates", prev: "3.10€", curr: "3.20€", up: true },
     { name: "Huile olive", prev: "27.50€", curr: "28.90€", up: true },
-    { name: "Beurre", prev: "4.80€", curr: "4.75€", up: false },
+    { name: "Beurre AOP", prev: "4.80€", curr: "4.75€", up: false },
   ];
   return (
     <div className="w-72 card rounded-2xl overflow-hidden shadow-card">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
         <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse-slow" />
-        <span className="text-xs text-slate-500 font-medium">Analyse en cours…</span>
+        <span className="text-xs text-slate-500 font-medium">Lecture matière en cours…</span>
       </div>
       <div className="p-4 space-y-3">
         {lines.map((l, i) => (
@@ -480,7 +461,7 @@ function AIMockup() {
         ))}
       </div>
       <div className="px-4 pb-4">
-        <div className="btn-primary w-full text-center text-xs py-2.5 rounded-xl">3 alertes générées</div>
+        <div className="btn-primary w-full text-center text-xs py-2.5 rounded-xl">3 alertes rendement générées</div>
       </div>
     </div>
   );
@@ -490,15 +471,15 @@ function AlertMockup() {
   return (
     <div className="w-72 space-y-3">
       {[
-        { product: "Filet de saumon", change: "+14.2%", recipes: "Tartare, Pavé grillé", impact: "−3.2 pts de marge" },
-        { product: "Huile d'olive", change: "+5.1%", recipes: "Salade, Pasta", impact: "−0.9 pts de marge" },
+        { product: "Filet de saumon", change: "+14.2%", recipes: "Tartare, Pavé grillé", impact: "−3.2 pts rendement" },
+        { product: "Huile d'olive AOP", change: "+5.1%", recipes: "Salade, Pasta", impact: "−0.9 pts rendement" },
       ].map((alert, i) => (
         <motion.div key={i} initial={{ opacity: 0, y: 10, scale: 0.97 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.15 }} className="card rounded-2xl p-4 border-l-4 border-blue-500">
           <div className="flex justify-between items-start mb-1.5">
             <span className="text-slate-800 font-semibold text-sm">{alert.product}</span>
             <span className="text-red-500 font-bold text-sm font-mono bg-red-50 px-2 py-0.5 rounded-lg">{alert.change}</span>
           </div>
-          <p className="text-xs text-slate-400 mb-2">Recettes : {alert.recipes}</p>
+          <p className="text-xs text-slate-400 mb-2">Fiches techniques : {alert.recipes}</p>
           <div className="flex items-center gap-1.5">
             <TrendingDown size={11} className="text-blue-500" />
             <span className="text-blue-600 text-xs font-semibold">{alert.impact}</span>
@@ -506,7 +487,7 @@ function AlertMockup() {
         </motion.div>
       ))}
       <motion.div initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ delay: 0.4 }} className="glass-blue rounded-xl p-3 text-center">
-        <span className="text-xs text-slate-500">💡 Récupérez </span>
+        <span className="text-xs text-slate-500">Récupérez </span>
         <span className="text-xs text-blue-600 font-semibold">+1 840€/mois</span>
         <span className="text-xs text-slate-500"> en ajustant votre carte</span>
       </motion.div>
@@ -514,23 +495,147 @@ function AlertMockup() {
   );
 }
 
+// ─── ROI Section ──────────────────────────────────────────
+function ROISection() {
+  const scans = [
+    {
+      n: 1,
+      product: "Filet de saumon",
+      supplier: "Metro Cash & Carry",
+      hausse: "+14.2%",
+      mensuel: "94€",
+      annuel: "1 128€",
+    },
+    {
+      n: 2,
+      product: "Huile d'olive AOP",
+      supplier: "Transgourmet",
+      hausse: "+5.1%",
+      mensuel: "28€",
+      annuel: "336€",
+    },
+    {
+      n: 3,
+      product: "Beurre AOC 82%",
+      supplier: "Promocash",
+      hausse: "+8.7%",
+      mensuel: "31€",
+      annuel: "372€",
+    },
+  ];
+
+  return (
+    <section id="roi" className="py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Retour sur investissement</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
+            En 3 scans,{" "}
+            <span className="gradient-text">YIELD est rentabilisé.</span>
+          </h2>
+          <p className="text-slate-500 max-w-xl mx-auto">
+            Abonnement YIELD : 49€/mois. Économies récupérées lors des 3 premiers scans :{" "}
+            <span className="font-semibold text-slate-700">153€/mois</span> — soit 3× le coût de l&apos;abonnement.
+          </p>
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-5 mb-8">
+          {scans.map((scan, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 32 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.12 }}
+              className="card rounded-2xl p-6 relative overflow-hidden card-hover"
+            >
+              <div className="absolute top-4 right-4 step-badge text-xs font-bold px-2.5 py-1 rounded-lg font-mono">
+                Scan #{scan.n}
+              </div>
+              <div className="w-10 h-10 glass-blue rounded-xl flex items-center justify-center mb-4">
+                <Scale size={18} className="text-blue-600" />
+              </div>
+              <p className="text-xs text-slate-400 font-medium mb-1">{scan.supplier}</p>
+              <h3 className="text-slate-900 font-bold mb-3">{scan.product}</h3>
+              <div className="flex items-baseline gap-2 mb-4">
+                <span className="text-2xl font-bold text-red-500 font-mono">{scan.hausse}</span>
+                <span className="text-slate-400 text-sm">matière première</span>
+              </div>
+              <div className="glass-blue rounded-xl p-3">
+                <p className="text-xs text-slate-500 mb-0.5">Économie récupérée</p>
+                <p className="text-blue-700 font-bold text-lg font-mono">
+                  {scan.mensuel}<span className="text-blue-400 text-sm font-normal">/mois</span>
+                </p>
+                <p className="text-blue-400 text-xs font-mono">{scan.annuel}/an</p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.3 }}
+          className="card rounded-2xl p-8 border border-blue-100"
+        >
+          <div className="grid md:grid-cols-3 gap-8 items-center">
+            <div className="text-center">
+              <p className="text-slate-400 text-sm mb-2">Abonnement YIELD</p>
+              <p className="text-3xl font-bold text-slate-900 font-mono">
+                49€<span className="text-base font-normal text-slate-400">/mois</span>
+              </p>
+            </div>
+            <div className="text-center">
+              <div className="text-5xl font-bold gradient-text font-mono">25×</div>
+              <p className="text-slate-500 text-sm mt-1">ROI moyen constaté</p>
+            </div>
+            <div className="text-center">
+              <p className="text-slate-400 text-sm mb-2">Économies détectées</p>
+              <p className="text-3xl font-bold text-blue-600 font-mono">
+                1 247€<span className="text-base font-normal text-slate-400">/mois</span>
+              </p>
+            </div>
+          </div>
+          <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+            <p className="text-slate-600 text-sm">
+              <span className="font-semibold text-slate-900">Dès votre 3ème scan,</span>{" "}
+              YIELD vous a rapporté plus qu&apos;il ne coûte.{" "}
+              <span className="text-blue-600 font-semibold">Rentabilité garantie ou remboursé.</span>
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Benefits ─────────────────────────────────────────────
 function BenefitsSection() {
   const benefits = [
-    { Icon: Clock, title: "2 min au lieu de 2 heures", description: "Fini les tableurs Excel et la saisie manuelle. Une photo, et c'est fait. Vos équipes se concentrent sur ce qui compte.", metric: "−95%", metricLabel: "de temps de contrôle" },
-    { Icon: TrendingUp, title: "Retrouvez vos points de marge", description: "Nos utilisateurs récupèrent en moyenne 3 à 5 points de marge dès les 6 premières semaines en ajustant leurs prix à temps.", metric: "+4 pts", metricLabel: "de marge en moyenne" },
-    { Icon: ShieldCheck, title: "Zéro surprise en fin de mois", description: "Votre P&L ne vous réserve plus de mauvaises surprises. Chaque livraison est contrôlée. Vous gérez, vous ne subissez pas.", metric: "100%", metricLabel: "des livraisons contrôlées" },
+    { Icon: Clock, title: "2 min. Pas 2 heures.", description: "Fini les tableurs Excel et la ressaisie manuelle. Une photo du bon, et c'est fait. Votre équipe reste concentrée sur le coup de feu.", metric: "−95%", metricLabel: "temps de contrôle" },
+    { Icon: TrendingUp, title: "Récupérez vos points de rendement", description: "Nos utilisateurs récupèrent en moyenne 3 à 5 points de marge nette dès les 6 premières semaines en ajustant leur carte au bon moment.", metric: "+4 pts", metricLabel: "rendement net moyen" },
+    { Icon: ShieldCheck, title: "Votre P&L, sous contrôle", description: "Chaque bon de livraison est contrôlé. Chaque hausse matière est détectée. Votre fin de mois ne vous réserve plus de mauvaises surprises.", metric: "100%", metricLabel: "des BL contrôlés" },
   ];
 
   return (
     <section id="benefices" className="py-24 px-5">
       <div className="max-w-6xl mx-auto">
-        {/* Avant / Après */}
         <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="grid md:grid-cols-2 gap-6 mb-20">
           <div className="card rounded-2xl p-8 border-l-4 border-red-300">
-            <p className="text-red-500 text-xs font-semibold uppercase tracking-widest mb-5">Avant MargeChef</p>
+            <p className="text-red-500 text-xs font-semibold uppercase tracking-widest mb-5">Avant YIELD</p>
             <ul className="space-y-3">
-              {["Vous découvrez la hausse 2 mois après", "Vous avez servi 400 couverts à perte", "Vos fiches techniques sont obsolètes", "Votre comptable vous annonce le manque"].map((item, i) => (
+              {[
+                "Vous découvrez la hausse 2 mois après",
+                "Vous avez servi 400 couverts à perte",
+                "Vos fiches techniques sont obsolètes",
+                "Votre comptable vous annonce le manque à gagner",
+              ].map((item, i) => (
                 <li key={i} className="flex items-center gap-2 text-slate-500 text-sm">
                   <X size={14} className="text-red-400 flex-shrink-0" /> {item}
                 </li>
@@ -538,9 +643,14 @@ function BenefitsSection() {
             </ul>
           </div>
           <div className="card rounded-2xl p-8 border-l-4 border-blue-400">
-            <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-5">Avec MargeChef</p>
+            <p className="text-blue-600 text-xs font-semibold uppercase tracking-widest mb-5">Avec YIELD</p>
             <ul className="space-y-3">
-              {["Alerte le jour même de la livraison", "Vous ajustez votre prix de vente immédiatement", "Fiches techniques mises à jour automatiquement", "Votre marge reste sous contrôle 24h/24"].map((item, i) => (
+              {[
+                "Alerte le jour même de la livraison",
+                "Vous ajustez votre prix de vente immédiatement",
+                "Fiches techniques mises à jour automatiquement",
+                "Votre rendement reste sous contrôle 24h/24",
+              ].map((item, i) => (
                 <li key={i} className="flex items-center gap-2 text-slate-700 text-sm">
                   <CheckCircle2 size={14} className="text-blue-500 flex-shrink-0" /> {item}
                 </li>
@@ -569,7 +679,7 @@ function BenefitsSection() {
   );
 }
 
-// ─── Story section ────────────────────────────────────────
+// ─── Story ────────────────────────────────────────────────
 function StorySection() {
   return (
     <section className="py-24 px-5">
@@ -585,16 +695,16 @@ function StorySection() {
               ))}
             </div>
             <div>
-              <p className="text-slate-900 text-sm font-semibold">L'équipe MargeChef</p>
-              <p className="text-slate-400 text-xs">Anciens restaurateurs · Paris & Lyon</p>
+              <p className="text-slate-900 text-sm font-semibold">L&apos;équipe YIELD</p>
+              <p className="text-slate-400 text-xs">Anciens restaurateurs · Paris &amp; Lyon</p>
             </div>
           </div>
           <blockquote className="text-slate-800 text-xl md:text-2xl font-medium leading-relaxed mb-6">
             On a géré des restaurants pendant{" "}
-            <span className="gradient-text font-bold">15 ans</span>. On a vécu cette douleur chaque mois — découvrir trop tard que le coût matière avait explosé, qu'on avait servi 300 couverts à perte parce que le saumon avait pris 12% et qu'on ne l'avait pas vu.
+            <span className="gradient-text font-bold">15 ans</span>. On a vécu cette douleur chaque mois — découvrir trop tard que le coût matière avait explosé, qu&apos;on avait servi 300 couverts à perte parce que le saumon avait pris 12% et qu&apos;on ne l&apos;avait pas vu.
           </blockquote>
-          <p className="text-slate-500 leading-relaxed mb-4">On a construit MargeChef parce que cet outil n'existait pas. On voulait quelque chose d'aussi simple qu'un SMS — une photo, une alerte. Rien de plus.</p>
-          <p className="text-slate-500 leading-relaxed">Aujourd'hui, MargeChef surveille les marges pendant que vous cuisinez, servez et gérez votre équipe. C'est ça, la restauration moderne.</p>
+          <p className="text-slate-500 leading-relaxed mb-4">On a construit YIELD parce que cet outil n&apos;existait pas. On voulait quelque chose d&apos;aussi simple qu&apos;un SMS — une photo, une alerte. Rien de plus.</p>
+          <p className="text-slate-500 leading-relaxed">Aujourd&apos;hui, YIELD surveille votre rendement pendant que vous cuisinez, servez et gérez votre brigade. C&apos;est ça, la restauration moderne.</p>
           <div className="flex items-center gap-1 mt-8">
             {Array(5).fill(0).map((_, i) => <Star key={i} size={16} className="text-amber-400 fill-amber-400" />)}
             <span className="text-slate-400 text-sm ml-2">4.9/5 · 120+ restaurants</span>
@@ -605,10 +715,10 @@ function StorySection() {
   );
 }
 
-// ─── Security section ─────────────────────────────────────
+// ─── Security ─────────────────────────────────────────────
 function SecuritySection() {
   const items = [
-    { Icon: Lock, title: "Chiffrement bout-en-bout", text: "Vos données et factures sont chiffrées AES-256 au repos et en transit. Personne d'autre que vous n'y accède." },
+    { Icon: Lock, title: "Chiffrement bout-en-bout", text: "Vos données et bons de livraison sont chiffrés AES-256 au repos et en transit. Personne d'autre que vous n'y accède." },
     { Icon: Server, title: "Hébergé en Europe", text: "Infrastructure AWS eu-west-3 (Paris). Conformité RGPD native. Aucune donnée ne sort de l'Union Européenne." },
     { Icon: ShieldCheck, title: "Sans mot de passe", text: "Accès par Magic Link uniquement. Pas de mot de passe à retenir, pas de risque de fuite de credentials." },
     { Icon: CheckCircle2, title: "Vos données vous appartiennent", text: "Export complet à tout moment. Suppression totale sur demande sous 48h. Aucune revente, jamais." },
@@ -622,7 +732,7 @@ function SecuritySection() {
           <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
             Vos données sont entre de <span className="gradient-text">bonnes mains</span>
           </h2>
-          <p className="text-slate-500 max-w-lg mx-auto">Nous avons conçu MargeChef avec la même exigence que nous avions pour nos restaurants — zéro compromis.</p>
+          <p className="text-slate-500 max-w-lg mx-auto">Conçu avec la même exigence que nous avions pour nos restaurants — zéro compromis.</p>
         </motion.div>
         <div className="grid md:grid-cols-2 gap-5">
           {items.map(({ Icon, title, text }, i) => (
@@ -639,6 +749,59 @@ function SecuritySection() {
         </div>
       </div>
     </section>
+  );
+}
+
+// ─── Conciergerie Chef ────────────────────────────────────
+function ConciergeButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <motion.button
+        initial={{ opacity: 0, scale: 0.8 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 2 }}
+        whileTap={{ scale: 0.95 }}
+        onClick={() => setOpen(v => !v)}
+        className="fixed bottom-6 left-5 z-30 w-14 h-14 glass rounded-2xl flex items-center justify-center shadow-card border border-blue-100"
+        aria-label="Conciergerie Chef"
+      >
+        <MessageCircle size={22} className="text-blue-600" />
+      </motion.button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="fixed bottom-24 left-5 z-30 w-72 glass rounded-2xl p-5 shadow-card border border-blue-100"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 btn-primary rounded-xl flex items-center justify-center">
+                <ChefHat size={15} className="text-white" />
+              </div>
+              <div>
+                <p className="text-slate-900 text-sm font-semibold">Conciergerie Chef</p>
+                <div className="flex items-center gap-1 text-xs text-emerald-500">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />
+                  Disponible maintenant
+                </div>
+              </div>
+            </div>
+            <p className="text-slate-500 text-xs leading-relaxed mb-4">
+              Un problème de scan ? Un doute sur un bon ? Notre équipe de restaurateurs vous répond sous 2h.
+            </p>
+            <a
+              href="mailto:chef@yield.restaurant"
+              className="btn-primary w-full py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5"
+            >
+              <MessageCircle size={13} /> Contacter le concierge
+            </a>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
@@ -674,7 +837,7 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
                     <CheckCircle2 size={32} className="text-blue-600" />
                   </div>
                   <h3 className="text-2xl font-bold text-slate-900 mb-2">Vérifiez vos emails</h3>
-                  <p className="text-slate-500 text-sm">Un lien de connexion a été envoyé à <span className="text-slate-800 font-medium">{email}</span>. Cliquez dessus pour accéder à votre espace.</p>
+                  <p className="text-slate-500 text-sm">Un lien de connexion a été envoyé à <span className="text-slate-800 font-medium">{email}</span>. Cliquez dessus pour accéder à votre espace YIELD.</p>
                 </div>
               ) : (
                 <>
@@ -682,8 +845,8 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
                     <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
                       <ChefHat size={26} className="text-white" />
                     </div>
-                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrez gratuitement</h3>
-                    <p className="text-slate-500 text-sm">14 jours d'essai · Sans carte bancaire · Sans mot de passe</p>
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrer le service</h3>
+                    <p className="text-slate-500 text-sm">14 jours offerts · Sans carte bancaire · Sans mot de passe</p>
                   </div>
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <input
@@ -719,16 +882,15 @@ function FinalCTABanner({ onCTA }: { onCTA: () => void }) {
   return (
     <section className="py-24 px-5">
       <motion.div initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-4xl mx-auto rounded-3xl p-12 text-center relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8 0%, #2563EB 40%, #4F46E5 100%)" }}>
-        {/* Shine overlay */}
         <div className="absolute inset-0 rounded-3xl" style={{ background: "radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 60%)" }} />
         <div className="relative">
           <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-            Chaque jour sans MargeChef<br />
-            <span className="text-blue-200">est un jour à perte</span>
+            Chaque jour sans YIELD<br />
+            <span className="text-blue-200">est un jour à perte nette</span>
           </h2>
-          <p className="text-blue-200 mb-8 max-w-md mx-auto">Rejoignez 120+ restaurateurs qui protègent leur marge automatiquement. Démarrez en 2 minutes.</p>
+          <p className="text-blue-200 mb-8 max-w-md mx-auto">Rejoignez 120+ chefs qui pilotent leur rendement en temps réel. Démarrez en 2 minutes.</p>
           <button onClick={onCTA} className="bg-white text-blue-700 font-bold px-10 py-4 rounded-2xl text-base inline-flex items-center gap-2.5 group shadow-glass hover:shadow-card-hover transition-all hover:-translate-y-0.5">
-            Essayer MargeChef gratuitement
+            Démarrer YIELD gratuitement
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
@@ -744,16 +906,16 @@ function Footer() {
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-400">
         <div className="flex items-center gap-2">
           <ChefHat size={15} className="text-blue-600" />
-          <span className="font-medium text-slate-600">MargeChef</span>
+          <span className="font-black gradient-text">YIELD</span>
           <span className="text-slate-200">·</span>
-          <span>Fait avec ❤️ par des restaurateurs</span>
+          <span>Par des chefs, pour des chefs</span>
         </div>
         <div className="flex gap-6">
           {["CGU", "Confidentialité", "Contact"].map(link => (
             <a key={link} href="#" className="hover:text-slate-700 transition-colors">{link}</a>
           ))}
         </div>
-        <p>© 2025 MargeChef. Tous droits réservés.</p>
+        <p>© 2026 YIELD. Tous droits réservés.</p>
       </div>
     </footer>
   );
@@ -773,6 +935,8 @@ export default function LandingPage() {
         <div className="divider-gradient max-w-6xl mx-auto" />
         <HowItWorksSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
+        <ROISection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
         <BenefitsSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <StorySection />
@@ -782,6 +946,7 @@ export default function LandingPage() {
       </main>
       <Footer />
       <CTASection show={showCTA} onClose={() => setShowCTA(false)} />
+      <ConciergeButton />
     </>
   );
 }

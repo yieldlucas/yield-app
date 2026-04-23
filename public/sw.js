@@ -1,4 +1,4 @@
-// MargeChef Service Worker
+// YIELD Service Worker
 // Stratégie : Network-first pour les pages, Cache-first pour les assets statiques
 
 const CACHE_VERSION = "v1";
@@ -128,7 +128,7 @@ self.addEventListener("push", (event) => {
 
   const data = event.data.json();
   event.waitUntil(
-    self.registration.showNotification(data.title || "MargeChef", {
+    self.registration.showNotification(data.title || "YIELD", {
       body: data.body,
       icon: "/icons/icon-192.png",
       badge: "/icons/badge-72.png",

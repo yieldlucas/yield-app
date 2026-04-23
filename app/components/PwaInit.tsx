@@ -97,7 +97,7 @@ export function InstallBanner() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-white font-semibold text-sm mb-1">
-              Installer MargeChef
+              Installer YIELD
             </p>
             {isIOS ? (
               <p className="text-slate-400 text-xs leading-relaxed">
