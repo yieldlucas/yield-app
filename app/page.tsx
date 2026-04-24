@@ -688,7 +688,7 @@ function TestimonialsSection() {
       role: "Chef-propriétaire",
       restaurant: "Le Comptoir du Marché",
       location: "Lyon 2e",
-      quote: "J'ai récupéré 8 points de marge en 4 mois. Le saumon de mon fournisseur avait pris 18% en 6 semaines. Sans YIELD, je servais à perte sans le savoir.",
+      quote: "J'ai repéré une hausse de 15% sur la volaille deux jours après la livraison. Avant YIELD, je l'aurais vu fin de mois en bouclant la compta, avec 400 couverts déjà servis à perte.",
     },
     {
       initials: "SR",
@@ -696,7 +696,7 @@ function TestimonialsSection() {
       role: "Cheffe exécutive",
       restaurant: "Brasserie Nord",
       location: "Paris 9e",
-      quote: "Avant, je passais mes dimanches soir sur Excel. Maintenant je photographie les BL à réception, et le lundi matin je vois exactement quelles fiches ajuster. 3h par semaine économisées.",
+      quote: "Plus de paperasse à classer à 1h du matin après le service. Je photographie les BL pendant que le commis range la chambre froide, c'est tout. Mon comptable est enfin content.",
     },
     {
       initials: "KB",
@@ -704,7 +704,7 @@ function TestimonialsSection() {
       role: "Chef",
       restaurant: "L'Atelier des Saveurs",
       location: "Marseille 7e",
-      quote: "Mon fournisseur d'huile d'olive a augmenté 3 fois en un trimestre. YIELD m'a alerté à chaque fois. J'ai renégocié mes tarifs et changé un produit. Rentabilisé dès le premier mois.",
+      quote: "Huile d'olive +8% en trois semaines, personne ne m'avait prévenu. YIELD m'a dit : « votre tapenade perd 2.1 points de marge ». J'ai appelé le fournisseur le jour même.",
     },
   ];
 
@@ -774,18 +774,22 @@ function StorySection() {
             </div>
             <div>
               <p className="text-slate-900 text-sm font-semibold">L&apos;équipe YIELD</p>
-              <p className="text-slate-400 text-xs">Anciens restaurateurs · Paris &amp; Lyon</p>
+              <p className="text-slate-400 text-xs">Conçu par d&apos;anciens cuisiniers pour les restaurateurs</p>
             </div>
           </div>
           <blockquote className="text-slate-800 text-xl md:text-2xl font-medium leading-relaxed mb-6">
-            On a géré des restaurants pendant{" "}
-            <span className="gradient-text font-bold">15 ans</span>. On a vécu cette douleur chaque mois — découvrir trop tard que le coût matière avait explosé, qu&apos;on avait servi 300 couverts à perte parce que le saumon avait pris 12% et qu&apos;on ne l&apos;avait pas vu.
+            On a bouclé des fins de service à{" "}
+            <span className="gradient-text font-bold">2h du matin</span>, calculette à la main, à comprendre pourquoi le mois avait fondu. La volaille avait pris 14% en douce. Le saumon, 9%. Personne ne prévient. On l&apos;a vécu.
           </blockquote>
-          <p className="text-slate-500 leading-relaxed mb-4">On a construit YIELD parce que cet outil n&apos;existait pas. On voulait quelque chose d&apos;aussi simple qu&apos;un SMS — une photo, une alerte. Rien de plus.</p>
-          <p className="text-slate-500 leading-relaxed">Aujourd&apos;hui, YIELD surveille votre rendement pendant que vous cuisinez, servez et gérez votre brigade. C&apos;est ça, la restauration moderne.</p>
+          <p className="text-slate-500 leading-relaxed mb-4">
+            On a construit YIELD pour que plus jamais un chef ne serve à perte sans le savoir. Pas un logiciel de gestion, pas un ERP. Juste : une photo du BL, une alerte si ça dérive. Rien à apprendre, rien à configurer.
+          </p>
+          <p className="text-slate-500 leading-relaxed">
+            Aujourd&apos;hui, pendant que vous dressez, que vous gérez la salle, que vous formez vos commis, YIELD lit vos livraisons et veille sur votre marge. Silencieusement.
+          </p>
           <div className="flex items-center gap-1 mt-8">
             {Array(5).fill(0).map((_, i) => <Star key={i} size={16} className="text-amber-400 fill-amber-400" />)}
-            <span className="text-slate-400 text-sm ml-2">4.9/5 · 120+ restaurants</span>
+            <span className="text-slate-400 text-sm ml-2">Utilisé par des chefs en France, Belgique et Suisse</span>
           </div>
         </motion.div>
       </div>

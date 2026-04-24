@@ -16,10 +16,7 @@ export function ServiceWorkerRegistration() {
             const worker = reg.installing;
             if (!worker) return;
             worker.addEventListener("statechange", () => {
-              if (worker.state === "installed" && navigator.serviceWorker.controller) {
-                // Nouvelle version disponible — on pourrait notifier l'utilisateur ici
-                console.log("[SW] Nouvelle version disponible");
-              }
+              // Nouvelle version activée au prochain chargement — pas de prompt intrusif
             });
           });
         })
@@ -101,18 +98,18 @@ export function InstallBanner() {
             </p>
             {isIOS ? (
               <p className="text-slate-500 text-xs leading-relaxed">
-                Appuyez sur{" "}
-                <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">
-                  ⎋ Partager
+                Ajoutez YIELD à votre écran d&apos;accueil : appuyez sur{" "}
+                <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-semibold">
+                  Partager
                 </span>{" "}
-                puis{" "}
+                <span aria-hidden="true">⎋</span> puis{" "}
                 <span className="text-blue-600 font-medium">
                   «&nbsp;Sur l&apos;écran d&apos;accueil&nbsp;»
-                </span>
+                </span>.
               </p>
             ) : (
               <p className="text-slate-500 text-xs">
-                Accès rapide depuis votre écran d&apos;accueil, mode plein écran, restez connecté en permanence.
+                Un tap, un scan, un rendement préservé. Même hors connexion dans votre cuisine.
               </p>
             )}
           </div>

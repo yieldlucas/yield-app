@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera, Bell, TrendingDown, ChefHat, LogOut,
   CheckCircle2, AlertTriangle, FileText, ChevronRight,
-  Sparkles, MessageCircle, Crown, X,
+  Sparkles, MessageCircle, Crown, X, Download, Settings,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
@@ -29,7 +29,14 @@ interface RecentInvoice {
   items_count: number;
 }
 
-type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
+interface BatchItem {
+  id: string;
+  fileName: string;
+  status: "queued" | "uploading" | "processing" | "done" | "error";
+  error?: string;
+  supplier?: string | null;
+  itemsCount?: number;
+}
 
 // ─── FAB Scanner ──────────────────────────────────────────
 function ScannerFAB({ onClick, show }: { onClick: () => void; show: boolean }) {
@@ -103,76 +110,93 @@ function ConciergeButton() {
   );
 }
 
-// ─── Upload overlay ───────────────────────────────────────
-function UploadOverlay({ status, onClose, onRetake }: { status: UploadStatus; onClose: () => void; onRetake: () => void }) {
-  const stages = [
-    { key: "uploading", label: "Envoi du bon de livraison…" },
-    { key: "processing", label: "Lecture des prix matière…" },
-    { key: "done", label: "Bilan généré !" },
-  ];
-  const order = ["uploading", "processing", "done"];
+// ─── Batch overlay ────────────────────────────────────────
+function BatchOverlay({
+  items, open, onClose, onRetake,
+}: {
+  items: BatchItem[];
+  open: boolean;
+  onClose: () => void;
+  onRetake: () => void;
+}) {
+  const total = items.length;
+  const done = items.filter(i => i.status === "done").length;
+  const errored = items.filter(i => i.status === "error").length;
+  const current = items.find(i => i.status === "uploading" || i.status === "processing");
+  const allFinished = total > 0 && items.every(i => i.status === "done" || i.status === "error");
 
   return (
     <AnimatePresence>
-      {status !== "idle" && (
+      {open && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 bg-white/80 backdrop-blur-md flex items-center justify-center p-5">
-          <motion.div initial={{ scale: 0.94, y: 16 }} animate={{ scale: 1, y: 0 }} className="card rounded-3xl p-8 max-w-xs w-full text-center shadow-card">
-            {status === "error" ? (
-              <>
-                <div className="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <AlertTriangle size={28} className="text-red-500" />
+          <motion.div initial={{ scale: 0.94, y: 16 }} animate={{ scale: 1, y: 0 }} className="card rounded-3xl p-7 max-w-sm w-full shadow-card">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="relative w-12 h-12 flex-shrink-0">
+                <div className="absolute inset-0 rounded-2xl btn-primary flex items-center justify-center">
+                  <ChefHat size={22} className="text-white" />
                 </div>
-                <h3 className="text-slate-900 font-bold text-lg mb-2">Lecture impossible</h3>
-                <p className="text-slate-500 text-sm mb-6">
-                  La photo est trop floue ou mal éclairée. Astuce : posez le bon à plat, évitez l&apos;ombre de votre main, et cadrez l&apos;intégralité du document.
-                </p>
-                <div className="space-y-2">
-                  <button onClick={onRetake} className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2">
-                    <Camera size={15} /> Reprendre la photo
-                  </button>
-                  <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm text-slate-500 hover:text-slate-700 transition-colors">
-                    Plus tard
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="relative w-16 h-16 mx-auto mb-6">
-                  <div className="absolute inset-0 rounded-2xl btn-primary flex items-center justify-center">
-                    <ChefHat size={28} className="text-white" />
-                  </div>
-                  {status !== "done" && (
-                    <svg className="absolute inset-0 animate-spin-slow" viewBox="0 0 64 64" fill="none">
-                      <circle cx="32" cy="32" r="30" stroke="rgba(37,99,235,0.15)" strokeWidth="2" />
-                      <path d="M32 2 A30 30 0 0 1 62 32" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
-                    </svg>
-                  )}
-                </div>
-
-                <div className="space-y-3 mb-5">
-                  {stages.map(stage => {
-                    const cur = order.indexOf(status);
-                    const idx = order.indexOf(stage.key);
-                    const isDone = idx < cur;
-                    const isActive = idx === cur;
-                    return (
-                      <div key={stage.key} className={`flex items-center gap-3 text-sm transition-colors ${isActive ? "text-slate-900" : isDone ? "text-blue-600" : "text-slate-300"}`}>
-                        <div className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 ${isActive ? "border-blue-500 bg-blue-50" : isDone ? "border-blue-400 bg-blue-50" : "border-slate-200"}`}>
-                          {isDone && <CheckCircle2 size={12} className="text-blue-500" />}
-                          {isActive && <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />}
-                        </div>
-                        {stage.label}
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {status === "done" && (
-                  <motion.button initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} onClick={onClose} className="btn-primary w-full py-3 rounded-xl text-sm">
-                    Voir les résultats
-                  </motion.button>
+                {!allFinished && (
+                  <svg className="absolute inset-0 animate-spin-slow" viewBox="0 0 48 48" fill="none">
+                    <circle cx="24" cy="24" r="22" stroke="rgba(37,99,235,0.15)" strokeWidth="2" />
+                    <path d="M24 2 A22 22 0 0 1 46 24" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
                 )}
-              </>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-slate-900 font-bold text-base">
+                  {allFinished ? "Lot traité" : "Analyse du lot"}
+                </p>
+                <p className="text-slate-400 text-xs">
+                  {allFinished
+                    ? `${done} traitée${done > 1 ? "s" : ""}${errored > 0 ? ` · ${errored} erreur${errored > 1 ? "s" : ""}` : ""}`
+                    : `${done}/${total} · ${current?.fileName ?? ""}`}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-64 overflow-y-auto mb-5 pr-1">
+              {items.map(item => (
+                <div key={item.id} className="flex items-center gap-3 text-sm">
+                  <div className={`w-6 h-6 rounded-full border flex items-center justify-center flex-shrink-0 ${
+                    item.status === "done" ? "border-blue-400 bg-blue-50" :
+                    item.status === "error" ? "border-red-400 bg-red-50" :
+                    item.status === "uploading" || item.status === "processing" ? "border-blue-500 bg-blue-50" :
+                    "border-slate-200"
+                  }`}>
+                    {item.status === "done" && <CheckCircle2 size={12} className="text-blue-500" />}
+                    {item.status === "error" && <AlertTriangle size={11} className="text-red-500" />}
+                    {(item.status === "uploading" || item.status === "processing") && (
+                      <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs truncate ${item.status === "error" ? "text-red-500" : "text-slate-700"}`}>
+                      {item.fileName}
+                    </p>
+                    {item.status === "done" && (item.supplier || item.itemsCount) && (
+                      <p className="text-[10px] text-slate-400 truncate">
+                        {item.supplier ?? "Fournisseur inconnu"}{item.itemsCount ? ` · ${item.itemsCount} produits` : ""}
+                      </p>
+                    )}
+                    {item.status === "error" && item.error && (
+                      <p className="text-[10px] text-red-400 truncate">{item.error}</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {allFinished && (
+              <div className="space-y-2">
+                <button onClick={onClose} className="btn-primary w-full py-3 rounded-xl text-sm">
+                  Voir les résultats
+                </button>
+                {errored > 0 && (
+                  <button onClick={onRetake} className="w-full py-2.5 rounded-xl text-sm text-slate-500 hover:text-slate-700 transition-colors flex items-center justify-center gap-1.5">
+                    <Camera size={14} /> Reprendre les scans en erreur
+                  </button>
+                )}
+              </div>
             )}
           </motion.div>
         </motion.div>
@@ -357,39 +381,77 @@ export default function DashboardPage() {
   const [user, setUser] = useState<{ email: string } | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
-  const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [loading, setLoading] = useState(true);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showTrial, setShowTrial] = useState(false);
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [batch, setBatch] = useState<BatchItem[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const openCamera = () => fileInputRef.current?.click();
 
+  const callApi = async (path: string, init: RequestInit = {}) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      router.replace("/");
+      throw new Error("No session");
+    }
+    return fetch(path, {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+  };
+
   const startCheckout = async () => {
     setCheckoutLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        router.replace("/");
-        return;
-      }
-      const res = await fetch("/api/checkout", {
+      const res = await callApi("/api/checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
+        headers: { "Content-Type": "application/json" },
       });
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
-      } else {
-        throw new Error(data.error ?? "Checkout failed");
+        return;
       }
-    } catch (err) {
-      console.error(err);
+      throw new Error(data.error ?? "Checkout failed");
+    } catch {
       setCheckoutLoading(false);
+    }
+  };
+
+  const openBillingPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await callApi("/api/billing/portal", { method: "POST" });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      throw new Error(data.error ?? "Portal failed");
+    } catch {
+      setPortalLoading(false);
+    }
+  };
+
+  const exportCSV = async () => {
+    setExportLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { router.replace("/"); return; }
+      // Download via GET avec token en query param (les navigateurs ne préservent pas les headers sur download direct)
+      const url = `/api/export/csv?t=${encodeURIComponent(session.access_token)}`;
+      window.open(url, "_blank");
+    } finally {
+      setTimeout(() => setExportLoading(false), 800);
     }
   };
 
@@ -399,18 +461,26 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
       setUser({ email: session.user.email ?? "" });
       loadMockData();
+
+      // Source de vérité = profiles.is_subscribed en DB
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_subscribed")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      const subscribed = Boolean((profile as { is_subscribed?: boolean } | null)?.is_subscribed);
+      setIsSubscribed(subscribed);
+
       if (typeof window !== "undefined") {
         if (!localStorage.getItem("yield_onboarding_seen")) setShowOnboarding(true);
         const params = new URLSearchParams(window.location.search);
         if (params.get("checkout") === "success") {
-          localStorage.setItem("yield_subscribed", "1");
           window.history.replaceState({}, "", "/dashboard");
         }
-        const subscribed = localStorage.getItem("yield_subscribed") === "1";
         const dismissed = localStorage.getItem("yield_trial_dismissed") === "1";
         setShowTrial(!subscribed && !dismissed);
       }
@@ -447,21 +517,65 @@ export default function DashboardPage() {
     ]);
   };
 
-  const handleScan = async (file: File) => {
-    setUploadStatus("uploading");
+  // Traite un fichier unique et retourne le résultat (pour pipeline batch)
+  const processOne = async (file: File): Promise<{ supplier?: string | null; itemsCount?: number }> => {
     const formData = new FormData();
     formData.append("invoice", file);
-    try {
-      await new Promise(r => setTimeout(r, 1000));
-      setUploadStatus("processing");
-      await new Promise(r => setTimeout(r, 2000));
-      const res = await fetch("/api/invoices/process", { method: "POST", body: formData });
-      if (!res.ok) throw new Error();
-      setUploadStatus("done");
-      loadMockData();
-    } catch {
-      setUploadStatus("error");
+    const res = await fetch("/api/invoices/process", { method: "POST", body: formData });
+    if (!res.ok) {
+      let msg = "Lecture impossible";
+      try {
+        const j = await res.json();
+        msg = j?.error ?? msg;
+      } catch { /* ignore */ }
+      throw new Error(msg);
     }
+    const payload = await res.json().catch(() => ({}));
+    return {
+      supplier: payload?.extracted?.supplier_name ?? null,
+      itemsCount: payload?.extracted?.items?.length ?? undefined,
+    };
+  };
+
+  // Lance le traitement séquentiel du lot (non-bloquant pour l'UI)
+  const processBatch = async (initial: BatchItem[]) => {
+    for (const item of initial) {
+      setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "uploading" } : x));
+      try {
+        // Petit délai pour donner du feedback visuel
+        await new Promise(r => setTimeout(r, 400));
+        setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "processing" } : x));
+        const result = await processOne((item as BatchItem & { file: File }).file);
+        setBatch(b => b.map(x => x.id === item.id ? {
+          ...x, status: "done", supplier: result.supplier, itemsCount: result.itemsCount,
+        } : x));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Erreur inconnue";
+        setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "error", error: msg } : x));
+      }
+    }
+    loadMockData();
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const queued: (BatchItem & { file: File })[] = Array.from(files).map((file, i) => ({
+      id: `${Date.now()}-${i}`,
+      fileName: file.name,
+      status: "queued",
+      file,
+    }));
+    setBatch(queued);
+    setBatchOpen(true);
+    processBatch(queued);
+  };
+
+  const retryErrored = () => {
+    const errored = batch.filter(i => i.status === "error");
+    if (errored.length === 0) return;
+    setBatchOpen(false);
+    setBatch([]);
+    openCamera();
   };
 
   const unreadCount = alerts.filter(a => !a.is_read).length;
@@ -484,6 +598,34 @@ export default function DashboardPage() {
             <span className="font-black text-base tracking-tight gradient-text">YIELD</span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={exportCSV}
+              disabled={exportLoading || invoices.length === 0}
+              className="text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Export comptable CSV"
+              title="Export comptable CSV"
+            >
+              {exportLoading ? (
+                <div className="w-[18px] h-[18px] border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
+              ) : (
+                <Download size={18} />
+              )}
+            </button>
+            {isSubscribed && (
+              <button
+                onClick={openBillingPortal}
+                disabled={portalLoading}
+                className="text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40"
+                aria-label="Gérer l'abonnement"
+                title="Gérer l'abonnement"
+              >
+                {portalLoading ? (
+                  <div className="w-[18px] h-[18px] border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
+                ) : (
+                  <Settings size={18} />
+                )}
+              </button>
+            )}
             {unreadCount > 0 && (
               <div className="relative">
                 <Bell size={20} className="text-slate-400" />
@@ -495,6 +637,7 @@ export default function DashboardPage() {
             <button
               onClick={() => supabase.auth.signOut().then(() => router.replace("/"))}
               className="text-slate-400 hover:text-slate-700 transition-colors"
+              aria-label="Déconnexion"
             >
               <LogOut size={18} />
             </button>
@@ -638,21 +781,22 @@ export default function DashboardPage() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,application/pdf"
+        multiple
         capture="environment"
         className="hidden"
         onChange={e => {
-          const file = e.target.files?.[0];
-          if (file) handleScan(file);
+          handleFiles(e.target.files);
           e.target.value = "";
         }}
       />
       <ScannerFAB onClick={openCamera} show={invoices.length > 0} />
       <ConciergeButton />
-      <UploadOverlay
-        status={uploadStatus}
-        onClose={() => setUploadStatus("idle")}
-        onRetake={() => { setUploadStatus("idle"); setTimeout(openCamera, 150); }}
+      <BatchOverlay
+        items={batch}
+        open={batchOpen}
+        onClose={() => { setBatchOpen(false); setBatch([]); }}
+        onRetake={retryErrored}
       />
       <OnboardingModal
         show={showOnboarding}
