@@ -201,7 +201,7 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           transition={{ delay: 0.75 }}
           className="mt-12 flex items-center justify-center gap-6 flex-wrap"
         >
-          {["Sans carte bancaire", "RGPD · Hébergé en Europe", "14 jours offerts"].map((text, i) => (
+          {["Premier scan en 2 minutes", "Sans carte bancaire", "RGPD · Hébergé en Europe"].map((text, i) => (
             <div key={i} className="flex items-center gap-1.5 text-sm text-slate-400">
               <CheckCircle2 size={14} className="text-blue-500" />
               {text}
@@ -235,7 +235,11 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
                 </div>
               ))}
             </div>
-            <div className="mt-4 pt-4 border-t border-slate-100">
+            <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500">Impact rendement estimé</span>
+                <span className="font-bold font-mono text-red-600">−184 €/mois</span>
+              </div>
               <div className="btn-primary text-center text-xs py-2 rounded-xl">
                 2 alertes rendement générées
               </div>
@@ -283,9 +287,9 @@ function StatsSection() {
   const k = useCounter(12, 2000, active);
 
   const stats = [
-    { value: `${pct}%`, label: "de rendement net perdu chaque année à cause des hausses fournisseurs non détectées", Icon: TrendingDown, color: "text-red-500" },
-    { value: `${hours}h`, label: "par semaine perdues à vérifier manuellement vos coûts matière", Icon: Clock, color: "text-amber-500" },
-    { value: `${k}k€`, label: "de manque à gagner annuel sur 500 k€ de chiffre d'affaires", Icon: Euro, color: "text-blue-600" },
+    { value: `${pct}%`, label: "de rendement qui s'évapore chaque année — hausses fournisseurs passées sous le radar", Icon: TrendingDown, color: "text-red-500" },
+    { value: `${hours}h`, label: "par semaine à recalculer les food costs à la main, entre deux services", Icon: Clock, color: "text-amber-500" },
+    { value: `${k}k€`, label: "de marge perdue par an sur un restaurant à 500 k€ de CA", Icon: Euro, color: "text-blue-600" },
   ];
 
   return (
