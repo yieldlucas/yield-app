@@ -683,6 +683,84 @@ function BenefitsSection() {
   );
 }
 
+// ─── Testimonials ─────────────────────────────────────────
+function TestimonialsSection() {
+  const quotes = [
+    {
+      initials: "TM",
+      name: "Thomas M.",
+      role: "Chef-propriétaire",
+      restaurant: "Le Comptoir du Marché",
+      location: "Lyon 2e",
+      quote: "J'ai récupéré 8 points de marge en 4 mois. Le saumon de mon fournisseur avait pris 18% en 6 semaines. Sans YIELD, je servais à perte sans le savoir.",
+    },
+    {
+      initials: "SR",
+      name: "Sarah R.",
+      role: "Cheffe exécutive",
+      restaurant: "Brasserie Nord",
+      location: "Paris 9e",
+      quote: "Avant, je passais mes dimanches soir sur Excel. Maintenant je photographie les BL à réception, et le lundi matin je vois exactement quelles fiches ajuster. 3h par semaine économisées.",
+    },
+    {
+      initials: "KB",
+      name: "Karim B.",
+      role: "Chef",
+      restaurant: "L'Atelier des Saveurs",
+      location: "Marseille 7e",
+      quote: "Mon fournisseur d'huile d'olive a augmenté 3 fois en un trimestre. YIELD m'a alerté à chaque fois. J'ai renégocié mes tarifs et changé un produit. Rentabilisé dès le premier mois.",
+    },
+  ];
+
+  return (
+    <section className="py-24 px-5">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-14"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Ils ont repris le contrôle</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">
+            Des chefs qui ne servent plus <span className="gradient-text">à perte</span>
+          </h2>
+        </motion.div>
+
+        <div className="grid md:grid-cols-3 gap-5">
+          {quotes.map((q, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1, duration: 0.6 }}
+              className="card rounded-2xl p-6 card-hover flex flex-col"
+            >
+              <div className="flex items-center gap-1 mb-4">
+                {Array(5).fill(0).map((_, s) => <Star key={s} size={13} className="text-amber-400 fill-amber-400" />)}
+              </div>
+              <blockquote className="text-slate-700 text-sm leading-relaxed mb-6 flex-1">
+                « {q.quote} »
+              </blockquote>
+              <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
+                <div className="w-10 h-10 btn-primary rounded-xl flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">{q.initials}</span>
+                </div>
+                <div className="min-w-0">
+                  <p className="text-slate-900 text-sm font-semibold truncate">{q.name}</p>
+                  <p className="text-slate-400 text-xs truncate">{q.role} · {q.restaurant}</p>
+                  <p className="text-slate-300 text-xs">{q.location}</p>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ─── Story ────────────────────────────────────────────────
 function StorySection() {
   return (
@@ -942,6 +1020,8 @@ export default function LandingPage() {
         <ROISection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <BenefitsSection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <TestimonialsSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <StorySection />
         <div className="divider-gradient max-w-6xl mx-auto" />

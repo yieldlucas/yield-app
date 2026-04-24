@@ -37,32 +37,21 @@ interface RecentInvoice {
 type UploadStatus = "idle" | "uploading" | "processing" | "done" | "error";
 
 // ─── FAB Scanner ──────────────────────────────────────────
-function ScannerFAB({ onScan }: { onScan: (file: File) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null);
+function ScannerFAB({ onClick, show }: { onClick: () => void; show: boolean }) {
+  if (!show) return null;
   return (
-    <>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        capture="environment"
-        className="hidden"
-        onChange={e => {
-          const file = e.target.files?.[0];
-          if (file) onScan(file);
-          e.target.value = "";
-        }}
-      />
-      <motion.button
-        whileTap={{ scale: 0.95 }}
-        onClick={() => inputRef.current?.click()}
-        className="fixed bottom-6 right-5 z-30 btn-primary rounded-2xl flex items-center gap-3 px-5 py-4 shadow-blue-lg"
-        aria-label="Scanner un bon de livraison"
-      >
-        <Camera size={22} className="text-white" />
-        <span className="text-white font-bold text-sm">Scanner un BL</span>
-      </motion.button>
-    </>
+    <motion.button
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.8 }}
+      whileTap={{ scale: 0.95 }}
+      onClick={onClick}
+      className="fixed bottom-6 right-5 z-30 btn-primary rounded-2xl flex items-center gap-3 px-5 py-4 shadow-blue-lg"
+      aria-label="Scanner un bon de livraison"
+    >
+      <Camera size={22} className="text-white" />
+      <span className="text-white font-bold text-sm">Scanner un BL</span>
+    </motion.button>
   );
 }
 
@@ -120,7 +109,7 @@ function ConciergeButton() {
 }
 
 // ─── Upload overlay ───────────────────────────────────────
-function UploadOverlay({ status, onClose }: { status: UploadStatus; onClose: () => void }) {
+function UploadOverlay({ status, onClose, onRetake }: { status: UploadStatus; onClose: () => void; onRetake: () => void }) {
   const stages = [
     { key: "uploading", label: "Envoi du bon de livraison…" },
     { key: "processing", label: "Lecture des prix matière…" },
@@ -139,8 +128,17 @@ function UploadOverlay({ status, onClose }: { status: UploadStatus; onClose: () 
                   <AlertTriangle size={28} className="text-red-500" />
                 </div>
                 <h3 className="text-slate-900 font-bold text-lg mb-2">Lecture impossible</h3>
-                <p className="text-slate-500 text-sm mb-6">Le bon n&apos;a pas pu être lu. Essayez avec un meilleur éclairage.</p>
-                <button onClick={onClose} className="btn-primary w-full py-3 rounded-xl text-sm">Réessayer</button>
+                <p className="text-slate-500 text-sm mb-6">
+                  La photo est trop floue ou mal éclairée. Astuce : posez le bon à plat, évitez l&apos;ombre de votre main, et cadrez l&apos;intégralité du document.
+                </p>
+                <div className="space-y-2">
+                  <button onClick={onRetake} className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2">
+                    <Camera size={15} /> Reprendre la photo
+                  </button>
+                  <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm text-slate-500 hover:text-slate-700 transition-colors">
+                    Plus tard
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -192,6 +190,8 @@ function UploadOverlay({ status, onClose }: { status: UploadStatus; onClose: () 
 function AlertCard({ alert }: { alert: Alert }) {
   const [expanded, setExpanded] = useState(false);
   const isHigh = Math.abs(alert.price_change_pct) >= 10;
+  const priceDelta = alert.new_price - alert.old_price;
+  const sign = priceDelta >= 0 ? "+" : "−";
 
   return (
     <motion.div layout onClick={() => setExpanded(v => !v)} className={`card rounded-2xl p-4 cursor-pointer card-hover border-l-4 ${isHigh ? "border-red-400" : "border-blue-400"}`}>
@@ -207,7 +207,10 @@ function AlertCard({ alert }: { alert: Alert }) {
             </span>
           </div>
           <p className="text-slate-400 text-xs mt-0.5">
-            {alert.old_price.toFixed(2)}€ → {alert.new_price.toFixed(2)}€/unité
+            {alert.old_price.toFixed(2)}€ → {alert.new_price.toFixed(2)}€
+            <span className={`ml-1.5 font-mono font-semibold ${isHigh ? "text-red-500" : "text-blue-600"}`}>
+              ({sign}{Math.abs(priceDelta).toFixed(2)}€/unité)
+            </span>
           </p>
         </div>
         <ChevronRight size={16} className={`text-slate-300 flex-shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
@@ -217,11 +220,15 @@ function AlertCard({ alert }: { alert: Alert }) {
         {expanded && alert.affected_recipes?.length > 0 && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
             <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Fiches techniques impactées</p>
+              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                {alert.affected_recipes.length} fiche{alert.affected_recipes.length > 1 ? "s" : ""} à ajuster
+              </p>
               {alert.affected_recipes.map((r, i) => (
                 <div key={i} className="flex items-center justify-between text-xs">
                   <span className="text-slate-600">{r.name}</span>
-                  <span className="text-blue-600 font-mono font-semibold">−{Math.abs(r.margin_impact_pts).toFixed(1)} pts rendement</span>
+                  <span className={`font-mono font-semibold ${r.margin_impact_pts >= 2 ? "text-red-500" : "text-blue-600"}`}>
+                    −{Math.abs(r.margin_impact_pts).toFixed(1)} pts de marge
+                  </span>
                 </div>
               ))}
             </div>
@@ -229,6 +236,64 @@ function AlertCard({ alert }: { alert: Alert }) {
         )}
       </AnimatePresence>
     </motion.div>
+  );
+}
+
+// ─── Onboarding modal ─────────────────────────────────────
+function OnboardingModal({ show, onClose, onStart }: { show: boolean; onClose: () => void; onStart: () => void }) {
+  const steps = [
+    { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
+    { n: "02", Icon: Sparkles, title: "L'IA lit", desc: "Chaque ligne matière est extraite et comparée à vos historiques." },
+    { n: "03", Icon: Bell, title: "Alerte rendement", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
+  ];
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-white/80 backdrop-blur-md flex items-center justify-center p-5"
+        >
+          <motion.div
+            initial={{ scale: 0.94, y: 16 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.94, y: 16 }}
+            className="card rounded-3xl p-8 max-w-sm w-full shadow-card"
+          >
+            <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-5 glow-blue-sm">
+              <ChefHat size={26} className="text-white" />
+            </div>
+            <h2 className="text-slate-900 font-bold text-xl text-center mb-2">Bienvenue, chef</h2>
+            <p className="text-slate-500 text-sm text-center mb-7 leading-relaxed">
+              Scannez votre premier bon de livraison en 2 minutes. YIELD veille sur votre rendement.
+            </p>
+            <div className="space-y-4 mb-7">
+              {steps.map((s, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-9 h-9 label-blue rounded-xl flex items-center justify-center flex-shrink-0">
+                    <s.Icon size={16} className="text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-slate-300 font-mono text-xs font-bold">{s.n}</span>
+                      <p className="text-slate-900 font-semibold text-sm">{s.title}</p>
+                    </div>
+                    <p className="text-slate-500 text-xs leading-relaxed">{s.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button onClick={onStart} className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2">
+              <Camera size={15} /> Scanner mon premier BL
+            </button>
+            <button onClick={onClose} className="w-full mt-2 py-2.5 text-sm text-slate-400 hover:text-slate-700 transition-colors">
+              Plus tard
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -256,15 +321,27 @@ export default function DashboardPage() {
   const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [loading, setLoading] = useState(true);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openCamera = () => fileInputRef.current?.click();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
       setUser({ email: session.user.email ?? "" });
       loadMockData();
+      if (typeof window !== "undefined" && !localStorage.getItem("yield_onboarding_seen")) {
+        setShowOnboarding(true);
+      }
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const dismissOnboarding = () => {
+    localStorage.setItem("yield_onboarding_seen", "1");
+    setShowOnboarding(false);
+  };
 
   const loadMockData = () => {
     setLoading(false);
@@ -309,6 +386,10 @@ export default function DashboardPage() {
 
   const unreadCount = alerts.filter(a => !a.is_read).length;
   const firstName = user?.email?.split("@")[0] ?? "";
+  const totalRecipesAffected = alerts.reduce((sum, a) => sum + (a.affected_recipes?.length ?? 0), 0);
+  const biggestSpike = alerts.length > 0
+    ? alerts.reduce((max, a) => Math.abs(a.price_change_pct) > Math.abs(max.price_change_pct) ? a : max, alerts[0])
+    : null;
 
   return (
     <div className="min-h-screen pb-28" style={{ background: "#F7F9FF" }}>
@@ -348,14 +429,20 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-slate-900 mb-0.5">
             Bonjour{firstName ? `, ${firstName}` : ""} 👋
           </h1>
-          <p className="text-slate-400 text-sm">{user?.email}</p>
+          <p className="text-slate-400 text-sm">
+            {alerts.length > 0
+              ? `${unreadCount} alerte${unreadCount > 1 ? "s" : ""} à examiner ce matin`
+              : invoices.length > 0
+                ? "Votre rendement est stable aujourd'hui"
+                : "Scannez votre premier bon de livraison pour démarrer"}
+          </p>
         </motion.div>
 
         {/* Big scan CTA — état vide */}
         {invoices.length === 0 && (
           <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.1 }}>
             <button
-              onClick={() => document.querySelector<HTMLInputElement>("input[capture]")?.click()}
+              onClick={openCamera}
               className="w-full card rounded-3xl p-8 text-center card-hover border-2 border-dashed border-blue-200 hover:border-blue-400 transition-colors"
             >
               <div className="w-16 h-16 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4 glow-blue-sm">
@@ -383,7 +470,20 @@ export default function DashboardPage() {
                   <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">Bilan Matière</span>
                 </div>
                 <p className="text-2xl font-bold mb-1">{unreadCount} alerte{unreadCount > 1 ? "s" : ""} rendement</p>
-                <p className="text-blue-200 text-sm">Des variations de coût matière ont été détectées</p>
+                <p className="text-blue-200 text-sm mb-4">
+                  {totalRecipesAffected} fiche{totalRecipesAffected > 1 ? "s" : ""} technique{totalRecipesAffected > 1 ? "s" : ""} à ajuster avant le prochain service
+                </p>
+                {biggestSpike && (
+                  <div className="flex items-center justify-between pt-3 border-t border-white/15">
+                    <div className="min-w-0">
+                      <p className="text-blue-200 text-[10px] uppercase tracking-wider font-semibold mb-0.5">Pire dérive</p>
+                      <p className="text-white text-sm font-semibold truncate">{biggestSpike.product_name}</p>
+                    </div>
+                    <span className="font-mono font-bold text-white bg-white/10 px-2.5 py-1 rounded-lg text-sm flex-shrink-0">
+                      +{biggestSpike.price_change_pct.toFixed(1)}%
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -414,7 +514,7 @@ export default function DashboardPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-slate-900 font-semibold text-base">Bons de Livraison</h2>
               <button
-                onClick={() => document.querySelector<HTMLInputElement>("input[capture]")?.click()}
+                onClick={openCamera}
                 className="label-blue text-xs px-3 py-1.5 rounded-full font-semibold flex items-center gap-1"
               >
                 <Camera size={12} /> Scanner
@@ -447,9 +547,30 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <ScannerFAB onScan={handleScan} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        className="hidden"
+        onChange={e => {
+          const file = e.target.files?.[0];
+          if (file) handleScan(file);
+          e.target.value = "";
+        }}
+      />
+      <ScannerFAB onClick={openCamera} show={invoices.length > 0} />
       <ConciergeButton />
-      <UploadOverlay status={uploadStatus} onClose={() => setUploadStatus("idle")} />
+      <UploadOverlay
+        status={uploadStatus}
+        onClose={() => setUploadStatus("idle")}
+        onRetake={() => { setUploadStatus("idle"); setTimeout(openCamera, 150); }}
+      />
+      <OnboardingModal
+        show={showOnboarding}
+        onClose={dismissOnboarding}
+        onStart={() => { dismissOnboarding(); openCamera(); }}
+      />
     </div>
   );
 }
