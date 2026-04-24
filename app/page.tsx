@@ -993,11 +993,14 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
     return () => clearTimeout(t);
   }, [resendIn]);
 
+  const normalizeEmail = (raw: string) => raw.trim().toLowerCase();
+
   const sendCode = async (emailToUse: string) => {
+    const normalized = normalizeEmail(emailToUse);
     setStatus("sending");
     setErrorMsg("");
     const { error } = await supabase.auth.signInWithOtp({
-      email: emailToUse,
+      email: normalized,
       options: { shouldCreateUser: true },
     });
     if (error) {
@@ -1005,6 +1008,8 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
       setErrorMsg(error.message.includes("rate") ? "Trop de tentatives. Attendez 60 secondes." : "Email invalide ou erreur d'envoi.");
       return;
     }
+    // On persiste la version normalisée pour que verifyOtp utilise la même chaîne
+    setEmail(normalized);
     setStep("code");
     setStatus("idle");
     setResendIn(30);
@@ -1012,21 +1017,34 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    const normalized = normalizeEmail(email);
+    if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       setErrorMsg("Adresse email invalide");
       setStatus("error");
       return;
     }
-    sendCode(email);
+    sendCode(normalized);
   };
 
-  const verifyCode = async (token: string) => {
+  const verifyCode = async (rawToken: string) => {
+    const token = rawToken.replace(/\D/g, "").trim();
+    if (token.length !== 6) return;
     setStatus("verifying");
     setErrorMsg("");
-    const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    const { error } = await supabase.auth.verifyOtp({
+      email: normalizeEmail(email),
+      token,
+      type: "email",
+    });
     if (error) {
       setStatus("error");
-      setErrorMsg(error.message.includes("expired") ? "Code expiré. Demandez-en un nouveau." : "Code incorrect. Vérifiez les 6 chiffres.");
+      if (error.message.toLowerCase().includes("expired")) {
+        setErrorMsg("Code expiré. Demandez-en un nouveau.");
+      } else if (error.message.toLowerCase().includes("invalid")) {
+        setErrorMsg("Code incorrect. Vérifiez les 6 chiffres.");
+      } else {
+        setErrorMsg(error.message);
+      }
       setCode("");
       return;
     }
