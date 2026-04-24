@@ -7,12 +7,8 @@ import {
   TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight,
   CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle,
 } from "lucide-react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase-browser";
 
 // ─── Animated counter ────────────────────────────────────
 function useCounter(target: number, duration = 1800, active = false) {
@@ -1003,9 +999,43 @@ function Footer() {
   );
 }
 
+// ─── Auto-redirect si session active ─────────────────────
+function useAuthRedirect() {
+  const router = useRouter();
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace("/dashboard");
+      } else {
+        setChecking(false);
+      }
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) router.replace("/dashboard");
+    });
+    return () => sub.subscription.unsubscribe();
+  }, [router]);
+
+  return checking;
+}
+
 // ─── Page ─────────────────────────────────────────────────
 export default function LandingPage() {
   const [showCTA, setShowCTA] = useState(false);
+  const checking = useAuthRedirect();
+
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F7F9FF" }}>
+        <div className="w-10 h-10 rounded-2xl btn-primary flex items-center justify-center animate-pulse">
+          <ChefHat size={18} className="text-white" />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <ShaderBackground />

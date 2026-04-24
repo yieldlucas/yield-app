@@ -44,13 +44,10 @@ export default function RootLayout({
   return (
     <html lang="fr" className={inter.variable}>
       <head>
-        {/* Apple PWA */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-        {/* Splash screens iOS (facultatif, générer avec un outil dédié) */}
       </head>
-      <body className="bg-surface text-slate-100 antialiased">
+      <body className="antialiased text-slate-900" style={{ background: "#F7F9FF" }}>
         {children}
         <InstallBanner />
         <ServiceWorkerRegistration />

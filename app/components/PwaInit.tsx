@@ -89,36 +89,37 @@ export function InstallBanner() {
   if (installed || dismissed || (!prompt && !isIOS)) return null;
 
   return (
-    <div className="fixed bottom-24 left-4 right-4 z-40 max-w-sm mx-auto">
-      <div className="glass-orange rounded-2xl p-4 border border-orange-400/20 shadow-2xl">
+    <div className="fixed bottom-24 left-4 right-4 z-40 max-w-sm mx-auto md:hidden">
+      <div className="glass rounded-2xl p-4 border border-blue-100 shadow-card">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 btn-brand rounded-xl flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 btn-primary rounded-xl flex items-center justify-center flex-shrink-0">
             <Download size={18} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-white font-semibold text-sm mb-1">
+            <p className="text-slate-900 font-semibold text-sm mb-1">
               Installer YIELD
             </p>
             {isIOS ? (
-              <p className="text-slate-400 text-xs leading-relaxed">
+              <p className="text-slate-500 text-xs leading-relaxed">
                 Appuyez sur{" "}
-                <span className="inline-block bg-slate-700 px-1.5 py-0.5 rounded text-slate-200 font-mono text-[10px]">
+                <span className="inline-block bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 font-mono text-[10px]">
                   ⎋ Partager
                 </span>{" "}
                 puis{" "}
-                <span className="text-orange-400 font-medium">
-                  «&nbsp;Sur l'écran d'accueil&nbsp;»
+                <span className="text-blue-600 font-medium">
+                  «&nbsp;Sur l&apos;écran d&apos;accueil&nbsp;»
                 </span>
               </p>
             ) : (
-              <p className="text-slate-400 text-xs">
-                Accès rapide depuis votre écran d'accueil, mode plein écran.
+              <p className="text-slate-500 text-xs">
+                Accès rapide depuis votre écran d&apos;accueil, mode plein écran, restez connecté en permanence.
               </p>
             )}
           </div>
           <button
             onClick={handleDismiss}
-            className="text-slate-500 hover:text-slate-300 flex-shrink-0 mt-0.5"
+            className="text-slate-400 hover:text-slate-700 flex-shrink-0 mt-0.5 transition-colors"
+            aria-label="Fermer"
           >
             <X size={16} />
           </button>
@@ -127,9 +128,9 @@ export function InstallBanner() {
         {!isIOS && (
           <button
             onClick={handleInstall}
-            className="btn-brand w-full mt-3 text-white text-sm font-semibold py-2.5 rounded-xl"
+            className="btn-primary w-full mt-3 text-white text-sm font-semibold py-2.5 rounded-xl"
           >
-            Installer l'application
+            Installer l&apos;application
           </button>
         )}
       </div>
