@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
   Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
-  TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight,
-  CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle,
+  TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight, ArrowLeft,
+  CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle, KeyRound,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
@@ -883,69 +883,332 @@ function ConciergeButton() {
   );
 }
 
+// ─── OTP Input (6 digits) ─────────────────────────────────
+function OTPInput({
+  value, onChange, disabled, autoFocus,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  autoFocus?: boolean;
+}) {
+  const refs = useRef<(HTMLInputElement | null)[]>([]);
+  const digits = value.padEnd(6, " ").slice(0, 6).split("");
+
+  useEffect(() => {
+    if (autoFocus) refs.current[0]?.focus();
+  }, [autoFocus]);
+
+  const setDigit = (i: number, d: string) => {
+    const next = digits.map((c, k) => (k === i ? d : c)).join("").trimEnd();
+    onChange(next);
+  };
+
+  const handleChange = (i: number, raw: string) => {
+    const clean = raw.replace(/\D/g, "");
+    if (!clean) {
+      setDigit(i, " ");
+      return;
+    }
+    // Support paste of full code
+    if (clean.length > 1) {
+      const padded = clean.slice(0, 6 - i);
+      const next = (value.slice(0, i) + padded).slice(0, 6);
+      onChange(next);
+      refs.current[Math.min(i + padded.length, 5)]?.focus();
+      return;
+    }
+    setDigit(i, clean);
+    if (i < 5) refs.current[i + 1]?.focus();
+  };
+
+  const handleKeyDown = (i: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !digits[i].trim() && i > 0) {
+      refs.current[i - 1]?.focus();
+      setDigit(i - 1, " ");
+      e.preventDefault();
+    }
+    if (e.key === "ArrowLeft" && i > 0) refs.current[i - 1]?.focus();
+    if (e.key === "ArrowRight" && i < 5) refs.current[i + 1]?.focus();
+  };
+
+  return (
+    <div className="flex gap-2 justify-center" onPaste={(e) => {
+      const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+      if (pasted) {
+        onChange(pasted);
+        refs.current[Math.min(pasted.length, 5)]?.focus();
+        e.preventDefault();
+      }
+    }}>
+      {digits.map((d, i) => (
+        <input
+          key={i}
+          ref={el => { refs.current[i] = el; }}
+          type="tel"
+          inputMode="numeric"
+          autoComplete={i === 0 ? "one-time-code" : "off"}
+          pattern="[0-9]*"
+          maxLength={1}
+          disabled={disabled}
+          value={d.trim()}
+          onChange={e => handleChange(i, e.target.value)}
+          onKeyDown={e => handleKeyDown(i, e)}
+          onFocus={e => e.currentTarget.select()}
+          className="w-11 h-14 md:w-12 md:h-14 text-center text-xl font-bold font-mono bg-slate-50 border-2 border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 focus:bg-white disabled:opacity-60 transition-all tabular-nums"
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── CTA Modal ────────────────────────────────────────────
 function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [resendIn, setResendIn] = useState(0);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
-    setStatus("loading");
+  // Reset quand le modal se ferme
+  useEffect(() => {
+    if (!show) {
+      setTimeout(() => {
+        setStep("email");
+        setEmail("");
+        setCode("");
+        setStatus("idle");
+        setErrorMsg("");
+        setResendIn(0);
+      }, 300);
+    }
+  }, [show]);
+
+  // Timer de renvoi
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const t = setTimeout(() => setResendIn(r => r - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendIn]);
+
+  const sendCode = async (emailToUse: string) => {
+    setStatus("sending");
+    setErrorMsg("");
     const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/dashboard` },
+      email: emailToUse,
+      options: { shouldCreateUser: true },
     });
-    setStatus(error ? "error" : "done");
+    if (error) {
+      setStatus("error");
+      setErrorMsg(error.message.includes("rate") ? "Trop de tentatives. Attendez 60 secondes." : "Email invalide ou erreur d'envoi.");
+      return;
+    }
+    setStep("code");
+    setStatus("idle");
+    setResendIn(30);
+  };
+
+  const handleEmailSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setErrorMsg("Adresse email invalide");
+      setStatus("error");
+      return;
+    }
+    sendCode(email);
+  };
+
+  const verifyCode = async (token: string) => {
+    setStatus("verifying");
+    setErrorMsg("");
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    if (error) {
+      setStatus("error");
+      setErrorMsg(error.message.includes("expired") ? "Code expiré. Demandez-en un nouveau." : "Code incorrect. Vérifiez les 6 chiffres.");
+      setCode("");
+      return;
+    }
+    setStatus("success");
+    // Session persistée par Supabase, redirection vers le dashboard
+    setTimeout(() => router.replace("/dashboard"), 400);
+  };
+
+  // Auto-submit quand les 6 chiffres sont saisis
+  useEffect(() => {
+    if (step === "code" && code.length === 6 && status !== "verifying" && status !== "success") {
+      verifyCode(code);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, step]);
+
+  const goBackToEmail = () => {
+    setStep("email");
+    setCode("");
+    setStatus("idle");
+    setErrorMsg("");
+  };
+
+  const resend = () => {
+    if (resendIn > 0) return;
+    setCode("");
+    sendCode(email);
   };
 
   return (
     <AnimatePresence>
       {show && (
         <>
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-sm" />
-          <motion.div initial={{ opacity: 0, scale: 0.96, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 16 }} transition={{ type: "spring", damping: 28, stiffness: 320 }} className="fixed inset-0 z-50 flex items-center justify-center p-5">
-            <div className="w-full max-w-md glass rounded-3xl p-8 relative shadow-blue-lg">
-              <button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 transition-colors">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 16 }}
+            transition={{ type: "spring", damping: 28, stiffness: 320 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-5"
+          >
+            <div className="w-full max-w-md glass rounded-3xl p-8 relative shadow-blue-lg overflow-hidden">
+              <button
+                onClick={onClose}
+                className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 transition-colors z-10"
+                aria-label="Fermer"
+              >
                 <X size={20} />
               </button>
-              {status === "done" ? (
-                <div className="text-center py-4">
+
+              {/* Succès */}
+              {status === "success" ? (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="text-center py-6"
+                >
                   <div className="w-16 h-16 glass-blue rounded-full flex items-center justify-center mx-auto mb-5">
                     <CheckCircle2 size={32} className="text-blue-600" />
                   </div>
-                  <h3 className="text-2xl font-bold text-slate-900 mb-2">Vérifiez vos emails</h3>
-                  <p className="text-slate-500 text-sm">Un lien de connexion a été envoyé à <span className="text-slate-800 font-medium">{email}</span>. Cliquez dessus pour accéder à votre espace YIELD.</p>
-                </div>
+                  <h3 className="text-2xl font-bold text-slate-900 mb-2">Connecté</h3>
+                  <p className="text-slate-500 text-sm">Redirection vers votre tableau de bord…</p>
+                </motion.div>
               ) : (
-                <>
-                  <div className="text-center mb-7">
-                    <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <ChefHat size={26} className="text-white" />
-                    </div>
-                    <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrer le service</h3>
-                    <p className="text-slate-500 text-sm">14 jours offerts · Sans carte bancaire · Sans mot de passe</p>
-                  </div>
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <input
-                      type="email" required value={email}
-                      onChange={e => setEmail(e.target.value)}
-                      placeholder="votre@email.com"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
-                    />
-                    <button type="submit" disabled={status === "loading"} className="btn-primary w-full py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-70 text-sm">
-                      {status === "loading" ? (
-                        <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Envoi…</>
-                      ) : (
-                        <>Recevoir mon lien de connexion <ArrowRight size={16} /></>
-                      )}
-                    </button>
-                    {status === "error" && <p className="text-red-500 text-xs text-center">Erreur. Vérifiez votre adresse email.</p>}
-                  </form>
-                  <p className="text-center text-slate-400 text-xs mt-5">
-                    En continuant, vous acceptez nos <a href="#" className="underline hover:text-slate-600">CGU</a> et notre <a href="#" className="underline hover:text-slate-600">politique de confidentialité</a>.
-                  </p>
-                </>
+                <AnimatePresence mode="wait" initial={false}>
+                  {/* Étape 1 : Email */}
+                  {step === "email" && (
+                    <motion.div
+                      key="email"
+                      initial={{ opacity: 0, x: -30 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -30 }}
+                      transition={{ duration: 0.25 }}
+                    >
+                      <div className="text-center mb-7">
+                        <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                          <ChefHat size={26} className="text-white" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrer le service</h3>
+                        <p className="text-slate-500 text-sm">
+                          On vous envoie un code à 6 chiffres par email. Sans mot de passe, sans friction.
+                        </p>
+                      </div>
+                      <form onSubmit={handleEmailSubmit} className="space-y-4">
+                        <input
+                          type="email"
+                          required
+                          value={email}
+                          onChange={e => { setEmail(e.target.value); if (status === "error") { setStatus("idle"); setErrorMsg(""); } }}
+                          placeholder="votre@email.com"
+                          autoComplete="email"
+                          inputMode="email"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+                        />
+                        <button
+                          type="submit"
+                          disabled={status === "sending"}
+                          className="btn-primary w-full py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-70 text-sm"
+                        >
+                          {status === "sending" ? (
+                            <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Envoi du code…</>
+                          ) : (
+                            <>Envoyer le code <ArrowRight size={16} /></>
+                          )}
+                        </button>
+                        {status === "error" && errorMsg && (
+                          <p className="text-red-500 text-xs text-center">{errorMsg}</p>
+                        )}
+                      </form>
+                      <p className="text-center text-slate-400 text-xs mt-5">
+                        En continuant, vous acceptez nos{" "}
+                        <a href="#" className="underline hover:text-slate-600">CGU</a> et notre{" "}
+                        <a href="#" className="underline hover:text-slate-600">politique de confidentialité</a>.
+                      </p>
+                    </motion.div>
+                  )}
+
+                  {/* Étape 2 : Code OTP */}
+                  {step === "code" && (
+                    <motion.div
+                      key="code"
+                      initial={{ opacity: 0, x: 30 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: 30 }}
+                      transition={{ duration: 0.25 }}
+                    >
+                      <div className="text-center mb-6">
+                        <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
+                          <KeyRound size={24} className="text-white" />
+                        </div>
+                        <h3 className="text-2xl font-bold text-slate-900 mb-2">Entrez le code</h3>
+                        <p className="text-slate-500 text-sm">
+                          Code à 6 chiffres envoyé à{" "}
+                          <span className="text-slate-800 font-medium">{email}</span>
+                        </p>
+                      </div>
+
+                      <OTPInput
+                        value={code}
+                        onChange={setCode}
+                        disabled={status === "verifying"}
+                        autoFocus
+                      />
+
+                      <div className="mt-5 h-5 text-center">
+                        {status === "verifying" && (
+                          <div className="flex items-center justify-center gap-2 text-blue-600 text-sm">
+                            <div className="w-3.5 h-3.5 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+                            Vérification…
+                          </div>
+                        )}
+                        {status === "error" && errorMsg && (
+                          <p className="text-red-500 text-xs">{errorMsg}</p>
+                        )}
+                      </div>
+
+                      <div className="mt-5 space-y-3">
+                        <button
+                          type="button"
+                          onClick={resend}
+                          disabled={resendIn > 0 || status === "verifying"}
+                          className="w-full py-2.5 rounded-xl text-sm text-slate-500 hover:text-blue-600 disabled:opacity-50 disabled:hover:text-slate-500 transition-colors"
+                        >
+                          {resendIn > 0 ? `Renvoyer le code dans ${resendIn}s` : "Renvoyer le code"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={goBackToEmail}
+                          className="w-full py-2.5 rounded-xl text-sm text-slate-400 hover:text-slate-700 flex items-center justify-center gap-1.5 transition-colors"
+                        >
+                          <ArrowLeft size={14} /> Mauvais email ? Retour
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               )}
             </div>
           </motion.div>
