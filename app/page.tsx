@@ -963,6 +963,17 @@ function OTPInput({
 }
 
 // ─── CTA Modal ────────────────────────────────────────────
+// Normalisation agressive : NFKC (caractères composés), retrait des
+// invisibles Unicode, retrait de TOUS les espaces (un email n'en contient pas),
+// lowercase final. Utilisée à l'envoi ET à la vérif pour garantir l'identité.
+function normalizeEmail(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    .replace(/[​-‍﻿ ]/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
 function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   const router = useRouter();
   const [step, setStep] = useState<"email" | "code">("email");
@@ -971,6 +982,11 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   const [status, setStatus] = useState<"idle" | "sending" | "verifying" | "success" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
   const [resendIn, setResendIn] = useState(0);
+
+  // ⭐ LOCK — l'email utilisé pour signInWithOtp est figé dans un ref.
+  // verifyOtp réutilise EXACTEMENT cette chaîne, indépendamment du state.
+  // Plus aucun risque que l'utilisateur modifie l'input entre send et verify.
+  const lockedEmailRef = useRef<string>("");
 
   // Reset quand le modal se ferme
   useEffect(() => {
@@ -982,6 +998,7 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
         setStatus("idle");
         setErrorMsg("");
         setResendIn(0);
+        lockedEmailRef.current = "";
       }, 300);
     }
   }, [show]);
@@ -992,8 +1009,6 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
     const t = setTimeout(() => setResendIn(r => r - 1), 1000);
     return () => clearTimeout(t);
   }, [resendIn]);
-
-  const normalizeEmail = (raw: string) => raw.trim().toLowerCase();
 
   const sendCode = async (emailToUse: string) => {
     const normalized = normalizeEmail(emailToUse);
@@ -1008,7 +1023,8 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
       setErrorMsg(error.message.includes("rate") ? "Trop de tentatives. Attendez 60 secondes." : "Email invalide ou erreur d'envoi.");
       return;
     }
-    // On persiste la version normalisée pour que verifyOtp utilise la même chaîne
+    // Lock + persist la version normalisée
+    lockedEmailRef.current = normalized;
     setEmail(normalized);
     setStep("code");
     setStatus("idle");
@@ -1029,25 +1045,57 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   const verifyCode = async (rawToken: string) => {
     const token = rawToken.replace(/\D/g, "").trim();
     if (token.length !== 6) return;
+
+    // Source de vérité absolue : le ref, pas le state
+    const verifyEmail = lockedEmailRef.current || normalizeEmail(email);
+    if (!verifyEmail) {
+      setStatus("error");
+      setErrorMsg("Session perdue. Recommencez depuis l'email.");
+      return;
+    }
+
     setStatus("verifying");
     setErrorMsg("");
-    const { error } = await supabase.auth.verifyOtp({
-      email: normalizeEmail(email),
+
+    // Tentative 1 — type "email" (standard Supabase v2 pour signInWithOtp)
+    let result = await supabase.auth.verifyOtp({
+      email: verifyEmail,
       token,
       type: "email",
     });
-    if (error) {
+
+    // Fallback — si l'erreur ressemble à "invalid token", on tente type "signup".
+    // Ça couvre le cas où shouldCreateUser a créé l'utilisateur juste à l'instant
+    // et où certaines versions de Supabase attendent le type signup plutôt qu'email.
+    if (result.error) {
+      const msg = result.error.message.toLowerCase();
+      const looksLikeInvalidToken = msg.includes("invalid") || msg.includes("token");
+      if (looksLikeInvalidToken) {
+        console.warn("[otp] type=email rejeté, retry avec type=signup", { email: verifyEmail });
+        const retry = await supabase.auth.verifyOtp({
+          email: verifyEmail,
+          token,
+          type: "signup",
+        });
+        result = retry;
+      }
+    }
+
+    if (result.error) {
+      const msg = result.error.message.toLowerCase();
+      console.error("[otp] verify failed", { email: verifyEmail, tokenLen: token.length, error: result.error.message });
       setStatus("error");
-      if (error.message.toLowerCase().includes("expired")) {
+      if (msg.includes("expired")) {
         setErrorMsg("Code expiré. Demandez-en un nouveau.");
-      } else if (error.message.toLowerCase().includes("invalid")) {
-        setErrorMsg("Code incorrect. Vérifiez les 6 chiffres.");
+      } else if (msg.includes("invalid")) {
+        setErrorMsg(`Code refusé. Renvoyez-en un nouveau (l'envoi précédent a pu être consommé).`);
       } else {
-        setErrorMsg(error.message);
+        setErrorMsg(result.error.message);
       }
       setCode("");
       return;
     }
+
     setStatus("success");
     // Session persistée par Supabase, redirection vers le dashboard
     setTimeout(() => router.replace("/dashboard"), 400);
@@ -1066,12 +1114,14 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
     setCode("");
     setStatus("idle");
     setErrorMsg("");
+    lockedEmailRef.current = "";
   };
 
   const resend = () => {
     if (resendIn > 0) return;
     setCode("");
-    sendCode(email);
+    // On renvoie depuis le lock (garantit exactement la même adresse)
+    sendCode(lockedEmailRef.current || email);
   };
 
   return (
