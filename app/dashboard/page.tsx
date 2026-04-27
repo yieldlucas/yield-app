@@ -466,6 +466,8 @@ export default function DashboardPage() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
   const [billingError, setBillingError] = useState<string | null>(null);
+  // 402 from /api/invoices/process → essai expiré, paiement obligatoire
+  const [paymentRequired, setPaymentRequired] = useState(false);
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -610,6 +612,14 @@ export default function DashboardPage() {
   };
 
   // Traite un fichier unique et retourne le résultat (pour pipeline batch)
+  // Erreur dédiée pour qu'on puisse intercepter "essai expiré" et ouvrir le paiement
+  class PaymentRequiredError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "PaymentRequiredError";
+    }
+  }
+
   const processOne = async (file: File): Promise<{ supplier?: string | null; itemsCount?: number }> => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -623,6 +633,10 @@ export default function DashboardPage() {
       headers: { Authorization: `Bearer ${session.access_token}` },
       body: formData,
     });
+    if (res.status === 402) {
+      const j = await res.json().catch(() => ({}));
+      throw new PaymentRequiredError(j?.error ?? "Abonnement requis");
+    }
     if (!res.ok) {
       let msg = "Lecture impossible";
       try {
@@ -638,6 +652,10 @@ export default function DashboardPage() {
     };
   };
 
+  // Garde la classe accessible au scope de processBatch
+  const isPaymentRequired = (err: unknown): boolean =>
+    err instanceof Error && err.name === "PaymentRequiredError";
+
   // Lance le traitement séquentiel du lot (non-bloquant pour l'UI)
   const processBatch = async (initial: BatchItem[]) => {
     for (const item of initial) {
@@ -652,6 +670,20 @@ export default function DashboardPage() {
         } : x));
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Erreur inconnue";
+        // ⭐ 402 → essai expiré : on stoppe le batch et on déclenche le paiement
+        if (isPaymentRequired(err)) {
+          setBatch(b => b.map(x => {
+            if (x.id === item.id) return { ...x, status: "error", error: "Abonnement requis" };
+            if (x.status === "queued") return { ...x, status: "error", error: "Lot annulé : abonnement requis" };
+            return x;
+          }));
+          setBatchOpen(false);
+          setShowTrial(true);
+          setPaymentRequired(true);
+          // Auto-redirige vers Stripe après une brève pause (laisse l'utilisateur lire le message)
+          setTimeout(() => { void startCheckout(); }, 600);
+          return;
+        }
         setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "error", error: msg } : x));
       }
     }
@@ -769,13 +801,46 @@ export default function DashboardPage() {
           </p>
         </motion.div>
 
-        {/* Essai gratuit Stripe */}
-        <TrialBanner
-          show={showTrial}
-          loading={checkoutLoading}
-          onStart={startCheckout}
-          onDismiss={dismissTrial}
-        />
+        {/* Essai expiré (402 reçu sur /api/invoices/process) — non-dismissable */}
+        {paymentRequired && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl p-5 text-white relative overflow-hidden border-2 border-red-300"
+            style={{ background: "linear-gradient(145deg, #B91C1C, #DC2626 50%, #EF4444)" }}
+          >
+            <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 80% 30%, rgba(255,255,255,0.14) 0%, transparent 60%)" }} />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle size={14} className="text-red-100" />
+                <span className="text-red-100 text-xs font-semibold uppercase tracking-wider">Essai terminé</span>
+              </div>
+              <p className="text-lg font-bold mb-1">Votre essai gratuit est expiré</p>
+              <p className="text-red-100 text-sm mb-4">
+                Pour continuer à scanner vos bons de livraison, abonnez-vous. Sans engagement, résiliable en 1 clic.
+              </p>
+              <button
+                onClick={startCheckout}
+                disabled={checkoutLoading}
+                className="w-full bg-white text-red-700 font-semibold text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 hover:bg-red-50 transition-colors disabled:opacity-70"
+              >
+                {checkoutLoading ? (
+                  <><div className="w-4 h-4 border-2 border-red-200 border-t-red-700 rounded-full animate-spin" /> Ouverture du paiement…</>
+                ) : "S'abonner maintenant"}
+              </button>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Essai gratuit Stripe (caché si paymentRequired prend le relais) */}
+        {!paymentRequired && (
+          <TrialBanner
+            show={showTrial}
+            loading={checkoutLoading}
+            onStart={startCheckout}
+            onDismiss={dismissTrial}
+          />
+        )}
         {billingError && (
           <motion.div
             initial={{ opacity: 0, y: -8 }}

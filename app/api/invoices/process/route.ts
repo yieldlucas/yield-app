@@ -35,6 +35,32 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Session expirée" }, { status: 401 });
   }
 
+  // ─── Gate abonnement : essai gratuit 14 jours OU is_subscribed = true ───
+  // Source de vérité = profiles.is_subscribed (mis à jour par webhook Stripe)
+  // + profiles.created_at pour l'ancienneté de l'inscription
+  const TRIAL_DAYS = 14;
+  const { data: profileRow } = await supabase
+    .from("profiles")
+    .select("is_subscribed, created_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const profile = profileRow as { is_subscribed?: boolean; created_at?: string } | null;
+  const isSubscribed = Boolean(profile?.is_subscribed);
+  const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
+  const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+  const trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
+
+  if (!isSubscribed && !trialActive) {
+    return NextResponse.json(
+      {
+        error: "Votre essai gratuit de 14 jours est terminé. Abonnez-vous pour continuer à scanner.",
+        code: "SUBSCRIPTION_REQUIRED",
+      },
+      { status: 402 }
+    );
+  }
+
   // ─── Restaurant ───
   const { data: restaurant } = await supabase
     .from("restaurants")

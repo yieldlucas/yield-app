@@ -41,6 +41,22 @@ export async function POST(req: NextRequest) {
     { auth: { persistSession: false, autoRefreshToken: false } }
   );
 
+  // ─── Idempotency : ack immédiat si l'event a déjà été traité ───
+  // Stripe peut retenter un event en cas de timeout / 5xx. Sans cette garde,
+  // on risque double-activation, double-désactivation, états incohérents.
+  const { error: idempError } = await supabase
+    .from("processed_events")
+    .insert({ id: event.id });
+
+  if (idempError) {
+    // 23505 = unique_violation Postgres → l'event a déjà été inséré (donc déjà traité)
+    if ((idempError as { code?: string }).code === "23505") {
+      return NextResponse.json({ received: true, idempotent: true });
+    }
+    console.error("[stripe/webhook] idempotency check failed:", idempError.message);
+    return NextResponse.json({ error: idempError.message }, { status: 500 });
+  }
+
   const setSubscriptionByCustomer = async (customerId: string, isSubscribed: boolean) => {
     const { error } = await supabase
       .from("profiles")
