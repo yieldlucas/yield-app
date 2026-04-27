@@ -987,10 +987,17 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [resendIn, setResendIn] = useState(0);
 
-  // ⭐ LOCK — l'email utilisé pour signInWithOtp est figé dans un ref.
-  // verifyOtp réutilise EXACTEMENT cette chaîne, indépendamment du state.
-  // Plus aucun risque que l'utilisateur modifie l'input entre send et verify.
+  // ⭐ LOCK email — figé entre signInWithOtp et verifyOtp, hors cycle React
   const lockedEmailRef = useRef<string>("");
+
+  // ⭐ LOCKS anti-double-call — synchrones (refs), donc immunes aux re-renders
+  // de React 18 et au double-mount de StrictMode. Une promesse en cours n'est
+  // jamais relancée tant qu'elle n'est pas terminée.
+  const sendingRef = useRef(false);
+  const verifyingRef = useRef(false);
+  // Mémorise quels tokens ont déjà été envoyés à verifyOtp pour ce code email.
+  // Évite un 2e appel sur un token déjà brûlé (cause classique du "expired" instantané).
+  const verifiedTokensRef = useRef<Set<string>>(new Set());
 
   // Reset quand le modal se ferme
   useEffect(() => {
@@ -1003,6 +1010,9 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
         setErrorMsg("");
         setResendIn(0);
         lockedEmailRef.current = "";
+        sendingRef.current = false;
+        verifyingRef.current = false;
+        verifiedTokensRef.current = new Set();
       }, 300);
     }
   }, [show]);
@@ -1015,28 +1025,46 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   }, [resendIn]);
 
   const sendCode = async (emailToUse: string) => {
+    if (sendingRef.current) return; // ⭐ anti-double-click
+    sendingRef.current = true;
     const normalized = normalizeEmail(emailToUse);
     setStatus("sending");
     setErrorMsg("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email: normalized,
-      options: { shouldCreateUser: true },
-    });
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        email: normalized,
+        options: { shouldCreateUser: true },
+      });
+      if (error) {
+        setStatus("error");
+        const m = error.message.toLowerCase();
+        if (m.includes("rate") || m.includes("too many")) {
+          setErrorMsg("Trop d'envois récents. Patientez 60 secondes.");
+        } else if (m.includes("invalid email") || m.includes("email")) {
+          setErrorMsg("Adresse email invalide ou refusée par le serveur.");
+        } else {
+          setErrorMsg(`Envoi impossible : ${error.message}`);
+        }
+        return;
+      }
+      // Lock + persist la version normalisée
+      lockedEmailRef.current = normalized;
+      verifiedTokensRef.current = new Set(); // nouveau code → on oublie les tokens précédents
+      setEmail(normalized);
+      setStep("code");
+      setStatus("idle");
+      setResendIn(30);
+    } catch (err) {
       setStatus("error");
-      setErrorMsg(error.message.includes("rate") ? "Trop de tentatives. Attendez 60 secondes." : "Email invalide ou erreur d'envoi.");
-      return;
+      setErrorMsg(err instanceof Error ? `Réseau : ${err.message}` : "Erreur réseau lors de l'envoi.");
+    } finally {
+      sendingRef.current = false;
     }
-    // Lock + persist la version normalisée
-    lockedEmailRef.current = normalized;
-    setEmail(normalized);
-    setStep("code");
-    setStatus("idle");
-    setResendIn(30);
   };
 
   const handleEmailSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (sendingRef.current || status === "sending") return; // ⭐ anti-double-submit
     const normalized = normalizeEmail(email);
     if (!normalized || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       setErrorMsg("Adresse email invalide");
@@ -1047,10 +1075,14 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
   };
 
   const verifyCode = async (rawToken: string) => {
+    if (verifyingRef.current) return; // ⭐ anti-double-call (cause root du "expiré instantané")
     const token = rawToken.replace(/\D/g, "").trim();
     if (token.length !== 6) return;
+    if (verifiedTokensRef.current.has(token)) {
+      // Déjà tenté → on ne re-tape PAS sur Supabase (qui répondrait "expiré/consommé")
+      return;
+    }
 
-    // Source de vérité absolue : le ref, pas le state
     const verifyEmail = lockedEmailRef.current || normalizeEmail(email);
     if (!verifyEmail) {
       setStatus("error");
@@ -1058,54 +1090,71 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
       return;
     }
 
+    verifyingRef.current = true;
+    verifiedTokensRef.current.add(token);
     setStatus("verifying");
     setErrorMsg("");
 
-    // Tentative 1 — type "email" (standard Supabase v2 pour signInWithOtp)
-    let result = await supabase.auth.verifyOtp({
-      email: verifyEmail,
-      token,
-      type: "email",
-    });
+    try {
+      // Tentative 1 — type "email" (standard Supabase v2 pour signInWithOtp)
+      let result = await supabase.auth.verifyOtp({
+        email: verifyEmail,
+        token,
+        type: "email",
+      });
 
-    // Fallback — si l'erreur ressemble à "invalid token", on tente type "signup".
-    // Ça couvre le cas où shouldCreateUser a créé l'utilisateur juste à l'instant
-    // et où certaines versions de Supabase attendent le type signup plutôt qu'email.
-    if (result.error) {
-      const msg = result.error.message.toLowerCase();
-      const looksLikeInvalidToken = msg.includes("invalid") || msg.includes("token");
-      if (looksLikeInvalidToken) {
-        console.warn("[otp] type=email rejeté, retry avec type=signup", { email: verifyEmail });
-        const retry = await supabase.auth.verifyOtp({
-          email: verifyEmail,
-          token,
-          type: "signup",
-        });
-        result = retry;
+      // Fallback type "signup" si invalid token (couvre certains cas shouldCreateUser)
+      if (result.error) {
+        const msg = result.error.message.toLowerCase();
+        const isInvalid = msg.includes("invalid") || msg.includes("token");
+        const isExpired = msg.includes("expired") || msg.includes("expire");
+        if (isInvalid && !isExpired) {
+          const retry = await supabase.auth.verifyOtp({
+            email: verifyEmail,
+            token,
+            type: "signup",
+          });
+          result = retry;
+        }
       }
-    }
 
-    if (result.error) {
-      const msg = result.error.message.toLowerCase();
-      console.error("[otp] verify failed", { email: verifyEmail, tokenLen: token.length, error: result.error.message });
+      if (result.error) {
+        const msg = result.error.message.toLowerCase();
+        const httpStatus = (result.error as { status?: number })?.status;
+        setStatus("error");
+        // ⭐ Diagnostic plus fin pour différencier expiration vs réseau vs token consommé
+        if (msg.includes("expired") || msg.includes("expire")) {
+          setErrorMsg("Le code a expiré (validité 1 heure). Demandez-en un nouveau.");
+        } else if (msg.includes("rate") || msg.includes("too many") || httpStatus === 429) {
+          setErrorMsg("Trop de tentatives. Patientez avant de réessayer.");
+        } else if (msg.includes("network") || msg.includes("fetch") || httpStatus === 0 || (httpStatus !== undefined && httpStatus >= 500)) {
+          setErrorMsg(`Erreur réseau (${httpStatus ?? "no status"}). Vérifiez votre connexion et réessayez.`);
+        } else if (msg.includes("invalid") || msg.includes("token")) {
+          setErrorMsg("Code refusé : 6 chiffres incorrects ou code déjà utilisé. Demandez-en un nouveau.");
+        } else {
+          setErrorMsg(`Échec : ${result.error.message}`);
+        }
+        setCode("");
+        return;
+      }
+
+      setStatus("success");
+      setTimeout(() => router.replace("/dashboard"), 400);
+    } catch (err) {
+      // Erreurs JS (réseau, timeout, parse) — toujours différentiées d'une vraie expiration
       setStatus("error");
-      if (msg.includes("expired")) {
-        setErrorMsg("Code expiré. Demandez-en un nouveau.");
-      } else if (msg.includes("invalid")) {
-        setErrorMsg(`Code refusé. Renvoyez-en un nouveau (l'envoi précédent a pu être consommé).`);
-      } else {
-        setErrorMsg(result.error.message);
-      }
+      setErrorMsg(
+        err instanceof Error
+          ? `Erreur réseau : ${err.message}. Vérifiez votre connexion et redemandez un code.`
+          : "Erreur réseau inconnue. Vérifiez votre connexion."
+      );
       setCode("");
-      return;
+    } finally {
+      verifyingRef.current = false;
     }
-
-    setStatus("success");
-    // Session persistée par Supabase, redirection vers le dashboard
-    setTimeout(() => router.replace("/dashboard"), 400);
   };
 
-  // Auto-submit quand les 6 chiffres sont saisis
+  // Auto-submit quand les 6 chiffres sont saisis (ref-guarded → 1 seul appel garanti)
   useEffect(() => {
     if (step === "code" && code.length === 6 && status !== "verifying" && status !== "success") {
       verifyCode(code);
@@ -1119,12 +1168,12 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
     setStatus("idle");
     setErrorMsg("");
     lockedEmailRef.current = "";
+    verifiedTokensRef.current = new Set();
   };
 
   const resend = () => {
-    if (resendIn > 0) return;
+    if (resendIn > 0 || sendingRef.current) return;
     setCode("");
-    // On renvoie depuis le lock (garantit exactement la même adresse)
     sendCode(lockedEmailRef.current || email);
   };
 
@@ -1189,29 +1238,35 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
                         </p>
                       </div>
                       <form onSubmit={handleEmailSubmit} className="space-y-4">
-                        <input
-                          type="email"
-                          required
-                          value={email}
-                          onChange={e => { setEmail(e.target.value); if (status === "error") { setStatus("idle"); setErrorMsg(""); } }}
-                          placeholder="votre@email.com"
-                          autoComplete="email"
-                          inputMode="email"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
-                        />
-                        <button
-                          type="submit"
-                          disabled={status === "sending"}
-                          className="btn-primary w-full py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-70 text-sm"
-                        >
-                          {status === "sending" ? (
-                            <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Envoi du code…</>
-                          ) : (
-                            <>Envoyer le code <ArrowRight size={16} /></>
-                          )}
-                        </button>
+                        <fieldset disabled={status === "sending"} className="space-y-4 disabled:opacity-60 disabled:cursor-not-allowed">
+                          <input
+                            type="email"
+                            required
+                            value={email}
+                            onChange={e => { setEmail(e.target.value); if (status === "error") { setStatus("idle"); setErrorMsg(""); } }}
+                            placeholder="votre@email.com"
+                            autoComplete="email"
+                            inputMode="email"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-slate-900 placeholder:text-slate-400 text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all disabled:bg-slate-100"
+                          />
+                          <button
+                            type="submit"
+                            disabled={status === "sending"}
+                            aria-busy={status === "sending"}
+                            className="btn-primary w-full py-3.5 rounded-xl flex items-center justify-center gap-2 disabled:opacity-80 disabled:cursor-wait text-sm transition-all"
+                          >
+                            {status === "sending" ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                <span className="font-medium">Envoi du code en cours…</span>
+                              </>
+                            ) : (
+                              <>Envoyer le code <ArrowRight size={16} /></>
+                            )}
+                          </button>
+                        </fieldset>
                         {status === "error" && errorMsg && (
-                          <p className="text-red-500 text-xs text-center">{errorMsg}</p>
+                          <p className="text-red-500 text-xs text-center leading-relaxed">{errorMsg}</p>
                         )}
                       </form>
                       <p className="text-center text-slate-400 text-xs mt-5">
