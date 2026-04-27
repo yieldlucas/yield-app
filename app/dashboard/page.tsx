@@ -465,6 +465,7 @@ export default function DashboardPage() {
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -492,33 +493,43 @@ export default function DashboardPage() {
 
   const startCheckout = async () => {
     setCheckoutLoading(true);
+    setBillingError(null);
     try {
       const res = await callApi("/api/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Erreur ${res.status}`);
       }
-      throw new Error(data.error ?? "Checkout failed");
-    } catch {
+      if (!data.url) {
+        throw new Error("Réponse Stripe invalide (pas d'URL).");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Paiement indisponible.";
+      setBillingError(`Impossible d'ouvrir le paiement : ${msg}`);
       setCheckoutLoading(false);
     }
   };
 
   const openBillingPortal = async () => {
     setPortalLoading(true);
+    setBillingError(null);
     try {
       const res = await callApi("/api/billing/portal", { method: "POST" });
-      const data = await res.json();
-      if (data.url) {
-        window.location.href = data.url;
-        return;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error ?? `Erreur ${res.status}`);
       }
-      throw new Error(data.error ?? "Portal failed");
-    } catch {
+      if (!data.url) {
+        throw new Error("Portail Stripe indisponible.");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Portail indisponible.";
+      setBillingError(`Impossible d'ouvrir le portail : ${msg}`);
       setPortalLoading(false);
     }
   };
@@ -600,9 +611,18 @@ export default function DashboardPage() {
 
   // Traite un fichier unique et retourne le résultat (pour pipeline batch)
   const processOne = async (file: File): Promise<{ supplier?: string | null; itemsCount?: number }> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      router.replace("/");
+      throw new Error("Session expirée");
+    }
     const formData = new FormData();
     formData.append("invoice", file);
-    const res = await fetch("/api/invoices/process", { method: "POST", body: formData });
+    const res = await fetch("/api/invoices/process", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      body: formData,
+    });
     if (!res.ok) {
       let msg = "Lecture impossible";
       try {
@@ -756,6 +776,25 @@ export default function DashboardPage() {
           onStart={startCheckout}
           onDismiss={dismissTrial}
         />
+        {billingError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl p-4 bg-red-50 border border-red-200 flex items-start gap-3"
+          >
+            <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-red-700 text-sm font-medium">Paiement indisponible</p>
+              <p className="text-red-600 text-xs leading-relaxed mt-0.5 break-words">{billingError}</p>
+              <p className="text-red-500 text-[11px] mt-2">
+                Si ça persiste : vérifiez que <code className="bg-red-100 px-1 rounded">STRIPE_SECRET_KEY</code> est bien définie dans les variables d&apos;env Vercel.
+              </p>
+            </div>
+            <button onClick={() => setBillingError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0" aria-label="Fermer">
+              <X size={14} />
+            </button>
+          </motion.div>
+        )}
 
         {/* Big scan CTA — état vide */}
         {invoices.length === 0 && (

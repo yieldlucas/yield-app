@@ -1,28 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 
-// Cette route Next.js :
-// 1. Upload l'image dans Supabase Storage
-// 2. Crée l'entrée en base
-// 3. Délègue le traitement lourd à la Supabase Edge Function
-// (Claude Vision, comparaison prix, alertes)
+export const runtime = "nodejs";
+// Vercel max duration : Pro = 60s, Hobby = 10s. Le scan IA peut prendre 15-25s
+// par BL, donc on autorise jusqu'à 60s pour rester safe sur Pro.
+export const maxDuration = 60;
+
+// Pipeline :
+// 1. Auth via Bearer token (cohérent avec le reste de l'API, client en localStorage)
+// 2. Récupère le restaurant lié au user
+// 3. Upload du fichier dans Storage
+// 4. Insert facture (status: pending)
+// 5. Délègue à la Supabase Edge Function (Claude Vision + comparaison prix)
 
 export async function POST(request: NextRequest) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll: () => cookieStore.getAll() } }
-  );
-
-  // Auth
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
+  // ─── Auth Bearer (compatible avec le client localStorage) ───
+  const authHeader = request.headers.get("authorization");
+  const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
+  if (!accessToken) {
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
 
-  // Restaurant
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    }
+  );
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
+  if (authError || !user) {
+    return NextResponse.json({ error: "Session expirée" }, { status: 401 });
+  }
+
+  // ─── Restaurant ───
   const { data: restaurant } = await supabase
     .from("restaurants")
     .select("id")
@@ -34,7 +47,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Aucun restaurant trouvé" }, { status: 404 });
   }
 
-  // Validation du fichier
+  // ─── Validation fichier ───
   const formData = await request.formData();
   const file = formData.get("invoice") as File | null;
 
@@ -42,10 +55,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Fichier manquant" }, { status: 400 });
   }
 
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
   if (!allowedTypes.includes(file.type)) {
     return NextResponse.json(
-      { error: "Format non supporté. Utilisez JPEG, PNG ou WebP." },
+      { error: "Format non supporté. Utilisez JPEG, PNG, WebP ou PDF." },
       { status: 400 }
     );
   }
@@ -57,7 +70,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Upload dans Supabase Storage
+  // ─── Upload Storage ───
   const safeFilename = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
   const storagePath = `${restaurant.id}/${Date.now()}-${safeFilename}`;
 
@@ -72,7 +85,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Création de l'entrée facture
+  // ─── Insert facture (status: pending) ───
   const { data: invoice, error: invoiceError } = await supabase
     .from("invoices")
     .insert({
@@ -87,20 +100,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Erreur création facture" }, { status: 500 });
   }
 
-  // Récupère le token d'accès pour l'appeler en tant qu'utilisateur authentifié
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
-    return NextResponse.json({ error: "Session expirée" }, { status: 401 });
-  }
-
-  // Délègue à la Supabase Edge Function
+  // ─── Délègue à la Supabase Edge Function ───
   const edgeFunctionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-invoice`;
 
   const edgeResponse = await fetch(edgeFunctionUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${session.access_token}`,
+      "Authorization": `Bearer ${accessToken}`,
       "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     },
     body: JSON.stringify({ invoice_id: invoice.id }),
