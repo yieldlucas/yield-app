@@ -468,6 +468,9 @@ export default function DashboardPage() {
   const [billingError, setBillingError] = useState<string | null>(null);
   // 402 from /api/invoices/process → essai expiré, paiement obligatoire
   const [paymentRequired, setPaymentRequired] = useState(false);
+  // Activation en cours après retour Stripe (course webhook vs redirect)
+  const [activatingSubscription, setActivatingSubscription] = useState(false);
+  const [subscriptionActivated, setSubscriptionActivated] = useState(false);
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -554,31 +557,78 @@ export default function DashboardPage() {
     setShowTrial(false);
   };
 
+  // Helper exposé pour rafraîchir le statut abonnement à la demande
+  // (poll après retour Stripe, ou call manuel après une action billing)
+  const refreshSubscription = async (userId: string): Promise<boolean> => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("is_subscribed")
+      .eq("id", userId)
+      .maybeSingle();
+    const subscribed = Boolean((data as { is_subscribed?: boolean } | null)?.is_subscribed);
+    setIsSubscribed(subscribed);
+    if (subscribed) {
+      setShowTrial(false);
+      setPaymentRequired(false);
+      setBillingError(null);
+    }
+    return subscribed;
+  };
+
   useEffect(() => {
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let pollDeadline = 0;
+
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
       setUser({ email: session.user.email ?? "" });
       loadMockData();
 
-      // Source de vérité = profiles.is_subscribed en DB
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("is_subscribed")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      const subscribed = Boolean((profile as { is_subscribed?: boolean } | null)?.is_subscribed);
-      setIsSubscribed(subscribed);
+      const userId = session.user.id;
+      const subscribed = await refreshSubscription(userId);
 
-      if (typeof window !== "undefined") {
-        if (!localStorage.getItem("yield_onboarding_seen")) setShowOnboarding(true);
-        const params = new URLSearchParams(window.location.search);
-        if (params.get("checkout") === "success") {
-          window.history.replaceState({}, "", "/dashboard");
+      if (typeof window === "undefined") return;
+      if (!localStorage.getItem("yield_onboarding_seen")) setShowOnboarding(true);
+
+      const params = new URLSearchParams(window.location.search);
+      const cameFromCheckout = params.get("checkout") === "success";
+      const dismissed = localStorage.getItem("yield_trial_dismissed") === "1";
+
+      if (cameFromCheckout) {
+        // Nettoie l'URL pour ne pas re-déclencher le polling à chaque navigation
+        window.history.replaceState({}, "", "/dashboard");
+        if (subscribed) {
+          // Webhook déjà arrivé → succès direct
+          setSubscriptionActivated(true);
+          setTimeout(() => setSubscriptionActivated(false), 4000);
+        } else {
+          // Course : webhook pas encore arrivé. On poll jusqu'à 12s.
+          setActivatingSubscription(true);
+          pollDeadline = Date.now() + 12_000;
+          pollTimer = setInterval(async () => {
+            const ok = await refreshSubscription(userId);
+            if (ok) {
+              if (pollTimer) clearInterval(pollTimer);
+              setActivatingSubscription(false);
+              setSubscriptionActivated(true);
+              setTimeout(() => setSubscriptionActivated(false), 4000);
+            } else if (Date.now() > pollDeadline) {
+              if (pollTimer) clearInterval(pollTimer);
+              setActivatingSubscription(false);
+              setBillingError(
+                "Le webhook Stripe n'est pas encore arrivé (12s). Le paiement est validé chez Stripe — votre abonnement s'activera dans quelques secondes. Rafraîchissez la page si nécessaire."
+              );
+            }
+          }, 1500);
         }
-        const dismissed = localStorage.getItem("yield_trial_dismissed") === "1";
+      } else {
         setShowTrial(!subscribed && !dismissed);
       }
     });
+
+    return () => {
+      if (pollTimer) clearInterval(pollTimer);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -800,6 +850,40 @@ export default function DashboardPage() {
                 : "Scannez votre premier bon de livraison pour démarrer"}
           </p>
         </motion.div>
+
+        {/* Activation en cours — webhook Stripe pas encore arrivé après le redirect */}
+        {activatingSubscription && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl p-4 border-2 border-blue-200 bg-blue-50 flex items-center gap-3"
+          >
+            <div className="w-9 h-9 rounded-xl bg-white border border-blue-200 flex items-center justify-center flex-shrink-0">
+              <div className="w-4 h-4 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-blue-900 font-semibold text-sm">Activation de votre abonnement…</p>
+              <p className="text-blue-700 text-xs">Stripe confirme le paiement, ça prend quelques secondes.</p>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Confirmation paiement réussi — auto-disparait après 4s */}
+        {subscriptionActivated && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-2xl p-4 border-2 border-emerald-200 bg-emerald-50 flex items-center gap-3"
+          >
+            <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center flex-shrink-0">
+              <CheckCircle2 size={18} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-emerald-900 font-semibold text-sm">Bienvenue chez YIELD Pro</p>
+              <p className="text-emerald-700 text-xs">Scans illimités, alertes temps réel, conciergerie.</p>
+            </div>
+          </motion.div>
+        )}
 
         {/* Essai expiré (402 reçu sur /api/invoices/process) — non-dismissable */}
         {paymentRequired && (
