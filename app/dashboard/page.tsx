@@ -602,9 +602,9 @@ export default function DashboardPage() {
           setSubscriptionActivated(true);
           setTimeout(() => setSubscriptionActivated(false), 4000);
         } else {
-          // Course : webhook pas encore arrivé. On poll jusqu'à 12s.
+          // Course : webhook pas encore arrivé. On poll jusqu'à 25s.
           setActivatingSubscription(true);
-          pollDeadline = Date.now() + 12_000;
+          pollDeadline = Date.now() + 25_000;
           pollTimer = setInterval(async () => {
             const ok = await refreshSubscription(userId);
             if (ok) {
@@ -616,7 +616,7 @@ export default function DashboardPage() {
               if (pollTimer) clearInterval(pollTimer);
               setActivatingSubscription(false);
               setBillingError(
-                "Le webhook Stripe n'est pas encore arrivé (12s). Le paiement est validé chez Stripe — votre abonnement s'activera dans quelques secondes. Rafraîchissez la page si nécessaire."
+                "Activation en attente. Le paiement est validé chez Stripe mais le webhook n'a pas encore mis à jour votre profil. Cliquez sur Rafraîchir ci-dessous, ou attendez 30s puis recharger la page."
               );
             }
           }, 1500);
@@ -929,19 +929,33 @@ export default function DashboardPage() {
           <motion.div
             initial={{ opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="rounded-xl p-4 bg-red-50 border border-red-200 flex items-start gap-3"
+            className="rounded-xl p-4 bg-amber-50 border border-amber-200 flex items-start gap-3"
           >
-            <AlertTriangle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
+            <AlertTriangle size={16} className="text-amber-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <p className="text-red-700 text-sm font-medium">Paiement indisponible</p>
-              <p className="text-red-600 text-xs leading-relaxed mt-0.5 break-words">{billingError}</p>
-              <p className="text-red-500 text-[11px] mt-2">
-                Si ça persiste : vérifiez que <code className="bg-red-100 px-1 rounded">STRIPE_SECRET_KEY</code> est bien définie dans les variables d&apos;env Vercel.
-              </p>
+              <p className="text-amber-800 text-sm font-medium">Activation en attente</p>
+              <p className="text-amber-700 text-xs leading-relaxed mt-0.5 break-words">{billingError}</p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    if (!session) return;
+                    const ok = await refreshSubscription(session.user.id);
+                    if (ok) {
+                      setBillingError(null);
+                      setSubscriptionActivated(true);
+                      setTimeout(() => setSubscriptionActivated(false), 4000);
+                    }
+                  }}
+                  className="btn-primary px-3 py-1.5 rounded-lg text-xs font-semibold"
+                >
+                  Rafraîchir le statut
+                </button>
+                <button onClick={() => setBillingError(null)} className="text-amber-600 hover:text-amber-800 text-xs underline">
+                  Fermer
+                </button>
+              </div>
             </div>
-            <button onClick={() => setBillingError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0" aria-label="Fermer">
-              <X size={14} />
-            </button>
           </motion.div>
         )}
 

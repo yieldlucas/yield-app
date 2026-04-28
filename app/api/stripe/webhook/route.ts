@@ -70,12 +70,21 @@ export async function POST(req: NextRequest) {
     .insert({ id: event.id });
 
   if (idempError) {
-    // 23505 = unique_violation Postgres → l'event a déjà été inséré (donc déjà traité)
-    if ((idempError as { code?: string }).code === "23505") {
+    const code = (idempError as { code?: string }).code;
+    // 23505 = unique_violation → l'event a déjà été inséré (déjà traité)
+    if (code === "23505") {
+      console.log("[stripe/webhook] event déjà traité (idempotency hit)", event.id);
       return NextResponse.json({ received: true, idempotent: true });
     }
-    console.error("[stripe/webhook] idempotency check failed:", idempError.message);
-    return NextResponse.json({ error: idempError.message }, { status: 500 });
+    // 42P01 = relation does not exist → la migration n'a pas été appliquée.
+    // On dégrade gracefully (pas d'idempotency mais on traite quand même)
+    // pour ne pas bloquer le tunnel commercial.
+    if (code === "42P01") {
+      console.warn("[stripe/webhook] table processed_events absente — idempotency désactivée. APPLIQUER LA MIGRATION 002.");
+    } else {
+      console.error("[stripe/webhook] idempotency check failed:", idempError.message, "code:", code);
+      return NextResponse.json({ error: idempError.message }, { status: 500 });
+    }
   }
 
   const setSubscriptionByCustomer = async (customerId: string, isSubscribed: boolean) => {
@@ -92,22 +101,46 @@ export async function POST(req: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.client_reference_id;
         const customerId = typeof session.customer === "string" ? session.customer : null;
+        const customerEmail = session.customer_email
+          ?? session.customer_details?.email
+          ?? null;
 
         if (!userId) {
           console.warn("[stripe/webhook] checkout.session.completed without client_reference_id", session.id);
           return NextResponse.json({ received: true });
         }
 
-        const { error } = await supabase
+        // ⭐ UPSERT plutôt que UPDATE : si le trigger handle_new_user n'a pas
+        // créé la ligne profiles (cas connu si la migration 001 manque), on
+        // la crée ici. UPDATE sur 0 ligne échoue silencieusement et l'UI
+        // reste en 'Essai 14j' alors que le paiement est validé.
+        const { data: upserted, error: upsertError } = await supabase
           .from("profiles")
-          .update({
-            is_subscribed: true,
-            stripe_customer_id: customerId,
-          })
-          .eq("id", userId);
+          .upsert(
+            {
+              id: userId,
+              email: customerEmail,
+              is_subscribed: true,
+              stripe_customer_id: customerId,
+            },
+            { onConflict: "id" }
+          )
+          .select("id, is_subscribed, stripe_customer_id");
 
-        if (error) throw error;
-        console.log(`[stripe/webhook] subscription activated: user=${userId} customer=${customerId}`);
+        if (upsertError) {
+          console.error("[stripe/webhook] upsert profiles failed:", upsertError.message, "code:", (upsertError as { code?: string }).code);
+          throw upsertError;
+        }
+
+        if (!upserted || upserted.length === 0) {
+          console.error("[stripe/webhook] ⚠️ upsert n'a renvoyé aucune ligne. userId:", userId);
+        } else {
+          console.log("[stripe/webhook] ✅ subscription activated:", {
+            user_id: userId,
+            customer_id: customerId,
+            updated_rows: upserted.length,
+          });
+        }
         break;
       }
 
