@@ -5,8 +5,29 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// Healthcheck — permet de tester depuis un navigateur que la route existe.
+// GET https://yieldapp.fr/api/stripe/webhook → 200 si la route est déployée.
+// (Ne touche à rien, juste un OK pour valider le routing.)
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    route: "/api/stripe/webhook",
+    method: "POST expected",
+    timestamp: new Date().toISOString(),
+  });
+}
+
 export async function POST(req: NextRequest) {
+  console.log("[stripe/webhook] RECU : Webhook Stripe", {
+    method: req.method,
+    url: req.url,
+    sigPresent: Boolean(req.headers.get("stripe-signature")),
+    contentType: req.headers.get("content-type"),
+    timestamp: new Date().toISOString(),
+  });
+
   if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
+    console.error("[stripe/webhook] ❌ Variables d'env manquantes : STRIPE_SECRET_KEY ou STRIPE_WEBHOOK_SECRET");
     return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
