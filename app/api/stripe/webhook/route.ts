@@ -31,8 +31,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    console.error("[stripe/webhook] ❌ Variables d'env manquantes : SUPABASE_SERVICE_ROLE_KEY ou NEXT_PUBLIC_SUPABASE_URL. Vérifie que la variable s'appelle EXACTEMENT 'SUPABASE_SERVICE_ROLE_KEY' dans Vercel (pas SUPABASE_SERVICE_KEY ni SERVICE_ROLE_KEY).");
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
+  // Confirme qu'on utilise bien la SERVICE ROLE (bypass RLS) et pas l'anon key par erreur.
+  // Une service_role key Supabase fait ~150+ chars et contient le claim "role":"service_role" en base64.
+  console.log("[stripe/webhook] Supabase client init avec SERVICE_ROLE (key length:", process.env.SUPABASE_SERVICE_ROLE_KEY.length, ")");
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -105,8 +109,19 @@ export async function POST(req: NextRequest) {
           ?? session.customer_details?.email
           ?? null;
 
+        // Log explicite pour vérifier le mapping user_id depuis Stripe
+        console.log("ID utilisateur reçu de Stripe:", session.client_reference_id);
+        console.log("[stripe/webhook] checkout.session.completed payload:", {
+          session_id: session.id,
+          client_reference_id: userId,
+          customer: customerId,
+          customer_email: customerEmail,
+          subscription: typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
+          payment_status: session.payment_status,
+        });
+
         if (!userId) {
-          console.warn("[stripe/webhook] checkout.session.completed without client_reference_id", session.id);
+          console.warn("[stripe/webhook] ⚠️ checkout.session.completed sans client_reference_id. Le frontend a-t-il bien passé client_reference_id: user.id à stripe.checkout.sessions.create() ?", session.id);
           return NextResponse.json({ received: true });
         }
 
@@ -159,6 +174,83 @@ export async function POST(req: NextRequest) {
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
         await setSubscriptionByCustomer(customerId, false);
         console.log(`[stripe/webhook] subscription.deleted: customer=${customerId}`);
+        break;
+      }
+
+      case "invoice.paid":
+      case "invoice.payment_succeeded": {
+        // Filet de sécurité : si checkout.session.completed est arrivé en retard
+        // (ou n'a pas trouvé le user_id), on ré-active l'abonnement à chaque
+        // facture payée. Cas typiques : trial_end → conversion automatique,
+        // facture mensuelle, ou checkout.session.completed perdu.
+        const invoice = event.data.object as Stripe.Invoice;
+        const customerId = typeof invoice.customer === "string"
+          ? invoice.customer
+          : invoice.customer?.id ?? null;
+        // Stripe SDK >= 17 : `subscription` n'est plus directement sur Invoice
+        // (déplacé sous parent.subscription_details). On accède via cast pour
+        // rester compatible avec les anciennes API responses.
+        const invoiceAny = invoice as unknown as {
+          subscription?: string | { id: string } | null;
+          parent?: { subscription_details?: { subscription?: string | null } | null } | null;
+        };
+        const rawSub = invoiceAny.subscription
+          ?? invoiceAny.parent?.subscription_details?.subscription
+          ?? null;
+        const subscriptionId = typeof rawSub === "string" ? rawSub : rawSub?.id ?? null;
+
+        if (!customerId) {
+          console.warn("[stripe/webhook] invoice.paid sans customer", invoice.id);
+          break;
+        }
+
+        // Stratégie 1 — UPDATE par stripe_customer_id (cas normal)
+        const { data: updated, error: updateErr } = await supabase
+          .from("profiles")
+          .update({ is_subscribed: true })
+          .eq("stripe_customer_id", customerId)
+          .select("id");
+
+        if (updateErr) {
+          console.error("[stripe/webhook] invoice.paid update err:", updateErr.message);
+          throw updateErr;
+        }
+
+        if (updated && updated.length > 0) {
+          console.log(`[stripe/webhook] ✅ invoice.paid: customer=${customerId} updated=${updated.length}`);
+          break;
+        }
+
+        // Stratégie 2 — Profil pas trouvé par customer_id : on récupère la subscription
+        // pour lire metadata.supabase_user_id (qu'on stocke à la création du checkout)
+        if (subscriptionId) {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+            const userIdFromMeta = subscription.metadata?.supabase_user_id;
+            if (userIdFromMeta) {
+              const { error: upsertErr } = await supabase
+                .from("profiles")
+                .upsert(
+                  {
+                    id: userIdFromMeta,
+                    is_subscribed: true,
+                    stripe_customer_id: customerId,
+                  },
+                  { onConflict: "id" }
+                );
+              if (upsertErr) {
+                console.error("[stripe/webhook] invoice.paid upsert via metadata err:", upsertErr.message);
+                throw upsertErr;
+              }
+              console.log(`[stripe/webhook] ✅ invoice.paid (via metadata): user=${userIdFromMeta} customer=${customerId}`);
+              break;
+            }
+          } catch (subErr) {
+            console.error("[stripe/webhook] retrieve subscription failed:", subErr instanceof Error ? subErr.message : subErr);
+          }
+        }
+
+        console.warn(`[stripe/webhook] ⚠️ invoice.paid : customer=${customerId} → aucune ligne profiles trouvée. Le user a-t-il un profile en DB ?`);
         break;
       }
 
