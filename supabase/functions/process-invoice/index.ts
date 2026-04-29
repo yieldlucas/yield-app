@@ -7,10 +7,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.54.0";
 
 // ─── Config ──────────────────────────────────────────────
-const PRICE_ALERT_THRESHOLD_PCT = 3;
+// Seuil au-delà duquel une variation de prix produit déclenche une alerte.
+// 3% générait trop de bruit (saisonnalité produits frais) → 7% capture les
+// vraies hausses fournisseur sans noyer le chef.
+const PRICE_ALERT_THRESHOLD_PCT = 7;
 
+// CORS restreint à la prod (le edge est appelé server-to-server depuis
+// /api/invoices/process, donc cross-origin browser est inutile en pratique).
+const ALLOWED_ORIGIN = "https://www.yieldapp.fr";
 const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Content-Type": "application/json",
@@ -25,6 +31,7 @@ interface ExtractedItem {
   unit_price_ht: number;
   total_price_ht: number;
   vat_rate: number;
+  needs_review?: boolean;
 }
 
 interface ExtractedInvoice {
@@ -98,13 +105,27 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
     throw new Error("Structure JSON invalide — champs obligatoires manquants");
   }
 
-  parsed.items = parsed.items.map((item) => ({
-    ...item,
-    quantity: Number(item.quantity) || 0,
-    unit_price_ht: Number(item.unit_price_ht) || 0,
-    total_price_ht: Number(item.total_price_ht) || 0,
-    vat_rate: Number(item.vat_rate) ?? 5.5,
-  }));
+  parsed.items = parsed.items.map((item) => {
+    const quantity = Number(item.quantity) || 0;
+    const unit_price_ht = Number(item.unit_price_ht) || 0;
+    const total_price_ht = Number(item.total_price_ht) || 0;
+    // Sanity check : si unit_price × quantity diverge de >5% du total annoncé,
+    // l'IA a probablement halluciné un champ. On flag pour revue manuelle au
+    // lieu de propager un prix faussé dans price_history (qui pollue les
+    // graphiques à vie).
+    const expected = unit_price_ht * quantity;
+    const drift = total_price_ht > 0
+      ? Math.abs(expected - total_price_ht) / total_price_ht
+      : 0;
+    return {
+      ...item,
+      quantity,
+      unit_price_ht,
+      total_price_ht,
+      vat_rate: Number(item.vat_rate) ?? 5.5,
+      needs_review: drift > 0.05,
+    };
+  });
 
   return parsed;
 }
@@ -274,15 +295,20 @@ async function processInvoice(
 
     const previousPrice = await getLastPrice(sb, productId);
 
-    // Enregistre le prix
-    await sb.from("price_history").insert({
-      product_id: productId,
-      price_ht: item.unit_price_ht,
-      invoice_id: invoiceId,
-      source: "invoice",
-    });
+    // Lignes flaggées needs_review : on garde la trace dans invoice_items
+    // (matched=false) mais on n'écrit PAS dans price_history ni d'alerte —
+    // un prix incohérent fausserait l'historique et déclencherait une fausse
+    // alerte de marge.
+    if (!item.needs_review) {
+      await sb.from("price_history").insert({
+        product_id: productId,
+        price_ht: item.unit_price_ht,
+        invoice_id: invoiceId,
+        source: "invoice",
+      });
+    }
 
-    // Ligne de facture
+    // Ligne de facture (toujours, pour traçabilité)
     await sb.from("invoice_items").insert({
       invoice_id: invoiceId,
       product_id: productId,
@@ -292,11 +318,11 @@ async function processInvoice(
       unit_price_ht: item.unit_price_ht,
       total_price_ht: item.total_price_ht,
       vat_rate: item.vat_rate,
-      matched: !wasCreated,
+      matched: !wasCreated && !item.needs_review,
     });
 
-    // Alerte si variation significative
-    if (previousPrice !== null) {
+    // Alerte uniquement si prix fiable
+    if (previousPrice !== null && !item.needs_review) {
       const changePct = ((item.unit_price_ht - previousPrice) / previousPrice) * 100;
 
       if (Math.abs(changePct) >= PRICE_ALERT_THRESHOLD_PCT) {

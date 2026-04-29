@@ -49,7 +49,32 @@ export async function POST(request: NextRequest) {
   const isSubscribed = Boolean(profile?.is_subscribed);
   const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
   const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
-  const trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
+  let trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
+
+  // Anti-fraude : un user qui se ré-inscrit avec un alias email (foo+1@gmail)
+  // ou en variant la casse n'a pas droit à un nouveau trial. On compare par
+  // normalized_email (calculé par trigger en DB, voir migration 004).
+  if (trialActive && createdAt && user.email && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { persistSession: false, autoRefreshToken: false } }
+    );
+    const normalized = user.email
+      .toLowerCase()
+      .replace(/\+[^@]*@/, "@");
+    const { data: olderTwin } = await adminClient
+      .from("profiles")
+      .select("id")
+      .eq("normalized_email", normalized)
+      .neq("id", user.id)
+      .lt("created_at", createdAt.toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (olderTwin) {
+      trialActive = false;
+    }
+  }
 
   if (!isSubscribed && !trialActive) {
     return NextResponse.json(
