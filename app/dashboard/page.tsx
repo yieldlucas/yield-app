@@ -851,20 +851,46 @@ export default function DashboardPage() {
     // ─── Polling 3s ───
     // RLS owner_invoices laisse le user lire sa propre facture, donc client
     // direct via supabase. Timeout dur à 90s pour ne pas poller à l'infini
-    // si l'edge function plante silencieusement.
+    // si l'edge function plante silencieusement. On tolère 3 erreurs réseau
+    // consécutives avant d'abandonner — au-delà c'est une vraie panne, pas
+    // un hoquet 4G.
     const POLL_INTERVAL_MS = 3000;
     const POLL_TIMEOUT_MS = 90_000;
+    const MAX_CONSECUTIVE_ERRORS = 3;
     const startedAt = Date.now();
+    let consecutiveErrors = 0;
 
     while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-      const { data, error } = await supabase
-        .from("invoices")
-        .select("status, processing_step, total_items_count, supplier:suppliers(name)")
-        .eq("id", invoiceId)
-        .maybeSingle();
-      if (error) continue; // transient — on retente
-      if (!data) continue;
+
+      let pollResult;
+      try {
+        pollResult = await supabase
+          .from("invoices")
+          .select("status, processing_step, total_items_count, supplier:suppliers(name)")
+          .eq("id", invoiceId)
+          .maybeSingle();
+      } catch (err) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          throw new Error("Connexion instable. Le scan continue en arrière-plan, rechargez dans quelques secondes.");
+        }
+        continue;
+      }
+
+      const { data, error } = pollResult;
+      if (error) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          throw new Error("Impossible de lire le statut du scan. Rechargez la page pour voir le résultat.");
+        }
+        continue;
+      }
+      if (!data) {
+        consecutiveErrors = 0;
+        continue;
+      }
+      consecutiveErrors = 0;
 
       const row = data as unknown as {
         status: string;

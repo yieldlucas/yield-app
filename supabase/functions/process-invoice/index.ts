@@ -402,15 +402,22 @@ async function processInvoice(
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
+  // Capturés hors try pour pouvoir marquer la facture en 'error' dans le
+  // catch global (sinon une crash mid-pipeline laisserait status='processing'
+  // à vie → polling client tournerait jusqu'au timeout 90s sans message clair).
+  let invoice_id: string | null = null;
+  let sb: SupabaseClient | null = null;
+
   try {
-    const { invoice_id } = await req.json();
+    const body = await req.json();
+    invoice_id = body.invoice_id ?? null;
     if (!invoice_id) return json({ error: "invoice_id requis" }, 400);
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) return json({ error: "Non authentifié" }, 401);
 
     // Client service-role pour les opérations DB
-    const sb = createClient(
+    sb = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
@@ -514,6 +521,16 @@ serve(async (req: Request) => {
 
   } catch (err) {
     console.error("[process-invoice] Fatal:", err);
+    // Garantit qu'aucune facture ne reste bloquée en 'processing' après un crash :
+    // on essaye de marquer 'error', mais on ne re-throw pas si ça échoue (le 500
+    // reste la bonne réponse à renvoyer au caller).
+    if (invoice_id && sb) {
+      try {
+        await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+      } catch (e2) {
+        console.error("[process-invoice] failed to mark invoice as error:", e2);
+      }
+    }
     return json({ error: "Erreur interne", details: String(err) }, 500);
   }
 });

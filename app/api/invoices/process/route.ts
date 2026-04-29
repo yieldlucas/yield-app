@@ -187,6 +187,23 @@ export async function POST(request: NextRequest) {
   // `after()` (Next 15) garantit que le fetch est envoyé même après le return.
   const edgeFunctionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-invoice`;
 
+  // Helper local : marque la facture en 'error' via service-role, en silence
+  // si jamais la clé manque ou que l'update lui-même échoue. Le but c'est de
+  // débloquer le polling client, pas de propager une nouvelle erreur.
+  const markInvoiceFailed = async (id: string) => {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+    try {
+      const adminClient = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false } }
+      );
+      await adminClient.from("invoices").update({ status: "error" }).eq("id", id);
+    } catch (e) {
+      console.error("[invoices/process] markInvoiceFailed threw", e);
+    }
+  };
+
   after(async () => {
     try {
       const res = await fetch(edgeFunctionUrl, {
@@ -201,21 +218,15 @@ export async function POST(request: NextRequest) {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         console.error("[invoices/process] edge function failed", res.status, body);
-        // Marque la facture en erreur pour que le polling client s'arrête.
-        // Service-role nécessaire car RLS bloque sinon (pas de session ici).
-        if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-          const adminClient = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY,
-            { auth: { persistSession: false, autoRefreshToken: false } }
-          );
-          await adminClient.from("invoices")
-            .update({ status: "error" })
-            .eq("id", invoice.id);
-        }
+        await markInvoiceFailed(invoice.id);
       }
+      // 200 OK : l'edge function a aussi marqué status='processed' ou 'duplicate'
+      // ou 'error' selon le cas (cf catch global edge function), rien à faire ici.
     } catch (err) {
       console.error("[invoices/process] edge function fetch threw", err);
+      // Réseau / DNS / timeout : l'edge function n'a peut-être jamais tourné,
+      // donc personne d'autre ne va marquer la facture en erreur. À nous de le faire.
+      await markInvoiceFailed(invoice.id);
     }
   });
 
