@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
+import { addToStack, listStack, removeFromStack, clearStack, type StackItem } from "@/lib/scan-stack";
 
 interface Alert {
   id: string;
@@ -145,6 +146,125 @@ function CameraGuide({ open, onConfirm, onCancel }: { open: boolean; onConfirm: 
           </button>
         </div>
       </motion.div>
+    </motion.div>
+  );
+}
+
+// ─── Stack Tray (photos en attente d'envoi) ───────────────
+// Drawer fixé en bas de l'écran, n'apparaît que si le stack contient des
+// items. Affiche les thumbnails + un CTA "Envoyer le lot (N)". Chaque
+// thumbnail a un bouton "x" pour retirer une photo.
+function StackTray({
+  items, onSend, onRemove, onClearAll, onAddMore, busy,
+}: {
+  items: StackItem[];
+  onSend: () => void;
+  onRemove: (id: string) => void;
+  onClearAll: () => void;
+  onAddMore: () => void;
+  busy: boolean;
+}) {
+  // Génère les URLs de preview à chaque rendu et les nettoie avec une cleanup.
+  // Pas idéal niveau perf mais le stack est rarement gros (< 20 photos en
+  // pratique) et ça évite tout risque de fuite de blob URL.
+  const [previews, setPreviews] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const map: Record<string, string> = {};
+    for (const it of items) {
+      if (it.file.type.startsWith("image/")) {
+        map[it.id] = URL.createObjectURL(it.file);
+      }
+    }
+    setPreviews(map);
+    return () => {
+      Object.values(map).forEach(URL.revokeObjectURL);
+    };
+  }, [items]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <motion.div
+      initial={{ y: 100, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 100, opacity: 0 }}
+      className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-xl"
+    >
+      <div className="max-w-lg mx-auto px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Layers size={16} className="text-blue-600" />
+            <p className="text-slate-900 font-semibold text-sm">
+              {items.length} {items.length > 1 ? "photos prêtes" : "photo prête"}
+            </p>
+          </div>
+          <button
+            onClick={onClearAll}
+            disabled={busy}
+            className="text-slate-400 hover:text-rose-500 text-xs font-medium disabled:opacity-30"
+          >
+            Tout supprimer
+          </button>
+        </div>
+
+        {/* Thumbnails horizontales */}
+        <div className="flex gap-2 overflow-x-auto pb-2 mb-3 -mx-1 px-1 scrollbar-none">
+          {items.map(it => (
+            <div key={it.id} className="relative flex-shrink-0">
+              {previews[it.id] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previews[it.id]}
+                  alt={it.fileName}
+                  className="w-16 h-20 object-cover rounded-lg border border-slate-200"
+                />
+              ) : (
+                <div className="w-16 h-20 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center">
+                  <FileText size={20} className="text-slate-400" />
+                </div>
+              )}
+              {!busy && (
+                <button
+                  onClick={() => onRemove(it.id)}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center shadow-md hover:bg-rose-500"
+                  aria-label="Retirer cette photo"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+          {/* Tile "+" pour ajouter une photo de plus */}
+          {!busy && (
+            <button
+              onClick={onAddMore}
+              className="flex-shrink-0 w-16 h-20 rounded-lg border-2 border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 flex flex-col items-center justify-center gap-0.5"
+              aria-label="Ajouter une photo"
+            >
+              <Camera size={16} />
+              <span className="text-[10px] font-medium">Ajouter</span>
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={onSend}
+          disabled={busy}
+          className="btn-primary w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+        >
+          {busy ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Analyse en cours...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 size={16} />
+              Envoyer le lot ({items.length})
+            </>
+          )}
+        </button>
+      </div>
     </motion.div>
   );
 }
@@ -585,6 +705,10 @@ export default function DashboardPage() {
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
   const [cameraGuideOpen, setCameraGuideOpen] = useState(false);
+  // Stack persistant (IndexedDB) : les photos prises s'accumulent ici tant
+  // que le chef n'a pas cliqué "Envoyer le lot". Survit aux reloads et
+  // pertes de réseau.
+  const [stack, setStack] = useState<StackItem[]>([]);
   // Quota mensuel : { used, quota } — null tant que pas chargé
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
@@ -698,6 +822,9 @@ export default function DashboardPage() {
   useEffect(() => {
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let pollDeadline = 0;
+
+    // Restaure le stack depuis IDB (photos prises avant un refresh / coupure)
+    void listStack().then(setStack);
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
@@ -950,6 +1077,10 @@ export default function DashboardPage() {
         setBatch(b => b.map(x => x.id === item.id ? {
           ...x, status: "done", supplier: result.supplier, itemsCount: result.itemsCount,
         } : x));
+        // Scan réussi → on libère la photo de IDB. Les erreurs y restent
+        // pour permettre un retry sans re-photographier.
+        await removeFromStack(item.id);
+        setStack(prev => prev.filter(s => s.id !== item.id));
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Erreur inconnue";
         // ⭐ 402 + QUOTA_EXCEEDED → quota mensuel atteint : on stoppe le batch
@@ -986,25 +1117,67 @@ export default function DashboardPage() {
     loadMockData();
   };
 
-  const handleFiles = (files: FileList | null) => {
+  // handleFiles n'auto-process plus : on pousse les photos dans le stack
+  // persistant (IDB), le chef peut en ajouter d'autres puis cliquer "Envoyer
+  // le lot". Coupure réseau / fermeture d'app entre 2 photos = aucune perte.
+  const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
-    const queued: (BatchItem & { file: File })[] = Array.from(files).map((file, i) => ({
-      id: `${Date.now()}-${i}`,
-      fileName: file.name,
+    const added: StackItem[] = [];
+    for (const file of Array.from(files)) {
+      const item = await addToStack(file);
+      added.push(item);
+    }
+    setStack(prev => [...prev, ...added]);
+  };
+
+  const removeStackItem = async (id: string) => {
+    await removeFromStack(id);
+    setStack(prev => prev.filter(s => s.id !== id));
+  };
+
+  const clearStackAll = async () => {
+    await clearStack();
+    setStack([]);
+  };
+
+  // Envoi du stack courant : on construit un batch à partir des items IDB,
+  // on lance processBatch, puis on retire de l'IDB chaque photo qui a été
+  // traitée avec succès. Les erreurs RESTENT dans le stack (le chef peut
+  // retry sans reprendre la photo).
+  const sendStack = () => {
+    if (stack.length === 0) return;
+    const queued: (BatchItem & { file: File; stackId: string })[] = stack.map(s => ({
+      id: s.id,
+      fileName: s.fileName,
       status: "queued",
-      file,
+      file: s.file,
+      stackId: s.id,
     }));
     setBatch(queued);
     setBatchOpen(true);
     processBatch(queued);
   };
 
+  // Retry des items en erreur : on rejoue uniquement ceux qui sont restés
+  // dans le stack (pas besoin de re-photographier — la photo originale est
+  // toujours dans IDB).
   const retryErrored = () => {
-    const errored = batch.filter(i => i.status === "error");
-    if (errored.length === 0) return;
+    const erroredIds = new Set(batch.filter(i => i.status === "error").map(i => i.id));
+    if (erroredIds.size === 0) return;
+    const toRetry = stack.filter(s => erroredIds.has(s.id));
+    if (toRetry.length === 0) return;
     setBatchOpen(false);
     setBatch([]);
-    openCamera();
+    const queued: (BatchItem & { file: File; stackId: string })[] = toRetry.map(s => ({
+      id: s.id,
+      fileName: s.fileName,
+      status: "queued",
+      file: s.file,
+      stackId: s.id,
+    }));
+    setBatch(queued);
+    setBatchOpen(true);
+    processBatch(queued);
   };
 
   const unreadCount = alerts.filter(a => !a.is_read).length;
@@ -1373,12 +1546,24 @@ export default function DashboardPage() {
           e.target.value = "";
         }}
       />
-      <ScannerFAB onClick={openCamera} show={invoices.length > 0} />
+      <ScannerFAB onClick={openCamera} show={invoices.length > 0 && stack.length === 0} />
       <CameraGuide
         open={cameraGuideOpen}
         onConfirm={launchNativeCamera}
         onCancel={() => setCameraGuideOpen(false)}
       />
+      <AnimatePresence>
+        {stack.length > 0 && (
+          <StackTray
+            items={stack}
+            onSend={sendStack}
+            onRemove={removeStackItem}
+            onClearAll={clearStackAll}
+            onAddMore={launchNativeCamera}
+            busy={batchOpen && !batch.every(i => i.status === "done" || i.status === "error")}
+          />
+        )}
+      </AnimatePresence>
       {quotaExceeded && (
         <motion.div
           initial={{ opacity: 0 }}

@@ -9,6 +9,7 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
+import { clearStack } from "@/lib/scan-stack";
 
 type Profile = {
   email: string;
@@ -126,6 +127,7 @@ export default function ProfilePage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? "Suppression échouée");
       }
+      await clearStack();
       await supabase.auth.signOut();
       router.replace("/");
     } catch (e) {
@@ -135,6 +137,9 @@ export default function ProfilePage() {
   };
 
   const signOut = async () => {
+    // On vide le stack IDB pour pas exposer les photos d'un user au compte
+    // suivant qui se connecterait sur le même device.
+    await clearStack();
     await supabase.auth.signOut();
     router.replace("/");
   };
