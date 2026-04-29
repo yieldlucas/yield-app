@@ -25,19 +25,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
-  console.log("ID utilisateur cherché :", user.id);
-  console.log("Clé Service Role présente :", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
   const { data: profile, error: profileError } = await supabase
     .from("profiles")
-    .select("*")
+    .select("stripe_customer_id")
     .eq("id", user.id)
     .maybeSingle();
 
-  console.log("Profil complet récupéré :", JSON.stringify(profile));
-  console.log("Erreur SELECT :", profileError?.message ?? "aucune");
-
   if (profileError || !profile?.stripe_customer_id) {
+    console.warn("[billing/portal] no customer_id", {
+      user_id: user.id,
+      profile_found: Boolean(profile),
+      error: profileError?.message,
+    });
     return NextResponse.json({ error: "No active subscription" }, { status: 404 });
   }
 
