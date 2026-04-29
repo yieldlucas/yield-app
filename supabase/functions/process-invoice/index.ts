@@ -217,6 +217,14 @@ async function getAffectedRecipes(
 }
 
 // ─── Main pipeline ────────────────────────────────────────
+class DuplicateInvoiceError extends Error {
+  existingInvoiceId: string;
+  constructor(existingInvoiceId: string) {
+    super("Duplicate invoice");
+    this.existingInvoiceId = existingInvoiceId;
+  }
+}
+
 async function processInvoice(
   sb: SupabaseClient,
   restaurantId: string,
@@ -224,6 +232,27 @@ async function processInvoice(
   extracted: ExtractedInvoice
 ) {
   const supplierId = await upsertSupplier(sb, restaurantId, extracted.supplier_name);
+
+  // Détection doublon AVANT le pipeline (sinon on insère prix/items en double).
+  // L'unique index uniq_invoice_per_supplier ne couvre que les BL avec
+  // supplier_id ET invoice_number renseignés.
+  if (extracted.invoice_number) {
+    const { data: existing } = await sb
+      .from("invoices")
+      .select("id")
+      .eq("restaurant_id", restaurantId)
+      .eq("supplier_id", supplierId)
+      .eq("invoice_number", extracted.invoice_number)
+      .neq("id", invoiceId)
+      .maybeSingle();
+
+    if (existing) {
+      await sb.from("invoices")
+        .update({ status: "duplicate", supplier_id: supplierId, raw_ai_response: extracted })
+        .eq("id", invoiceId);
+      throw new DuplicateInvoiceError(existing.id);
+    }
+  }
 
   // Mise à jour métadonnées facture
   await sb.from("invoices").update({
@@ -389,7 +418,23 @@ serve(async (req: Request) => {
     }
 
     // Pipeline complet
-    const result = await processInvoice(sb, invoice.restaurant.id, invoice_id, extracted);
+    let result;
+    try {
+      result = await processInvoice(sb, invoice.restaurant.id, invoice_id, extracted);
+    } catch (err) {
+      if (err instanceof DuplicateInvoiceError) {
+        // Nettoyage : on supprime le fichier uploadé en double pour ne pas
+        // gonfler le storage (la ligne invoices reste, marquée 'duplicate',
+        // pour traçabilité et debug si besoin).
+        await sb.storage.from("invoices").remove([invoice.image_path]).catch(() => {});
+        return json({
+          error: "Cette facture a déjà été enregistrée.",
+          code: "DUPLICATE_INVOICE",
+          existing_invoice_id: err.existingInvoiceId,
+        }, 409);
+      }
+      throw err;
+    }
 
     return json(result, 200);
 

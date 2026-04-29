@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Webhook Error: ${message}` }, { status: 400 });
   }
 
-  const supabase = createClient(
+  const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false, autoRefreshToken: false } }
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   // ─── Idempotency : ack immédiat si l'event a déjà été traité ───
   // Stripe peut retenter un event en cas de timeout / 5xx. Sans cette garde,
   // on risque double-activation, double-désactivation, états incohérents.
-  const { error: idempError } = await supabase
+  const { error: idempError } = await supabaseAdmin
     .from("processed_events")
     .insert({ id: event.id });
 
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
   }
 
   const setSubscriptionByCustomer = async (customerId: string, isSubscribed: boolean) => {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from("profiles")
       .update({ is_subscribed: isSubscribed })
       .eq("stripe_customer_id", customerId);
@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
         // créé la ligne profiles (cas connu si la migration 001 manque), on
         // la crée ici. UPDATE sur 0 ligne échoue silencieusement et l'UI
         // reste en 'Essai 14j' alors que le paiement est validé.
-        const { data: upserted, error: upsertError } = await supabase
+        const { data: upserted, error: upsertError } = await supabaseAdmin
           .from("profiles")
           .upsert(
             {
@@ -146,6 +146,8 @@ export async function POST(req: NextRequest) {
           console.error("[stripe/webhook] upsert profiles failed:", upsertError.message, "code:", (upsertError as { code?: string }).code);
           throw upsertError;
         }
+
+        console.log("Statut mis à jour pour l'ID :", session.client_reference_id);
 
         if (!upserted || upserted.length === 0) {
           console.error("[stripe/webhook] ⚠️ upsert n'a renvoyé aucune ligne. userId:", userId);
@@ -205,7 +207,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Stratégie 1 — UPDATE par stripe_customer_id (cas normal)
-        const { data: updated, error: updateErr } = await supabase
+        const { data: updated, error: updateErr } = await supabaseAdmin
           .from("profiles")
           .update({ is_subscribed: true })
           .eq("stripe_customer_id", customerId)
@@ -228,7 +230,7 @@ export async function POST(req: NextRequest) {
             const subscription = await stripe.subscriptions.retrieve(subscriptionId);
             const userIdFromMeta = subscription.metadata?.supabase_user_id;
             if (userIdFromMeta) {
-              const { error: upsertErr } = await supabase
+              const { error: upsertErr } = await supabaseAdmin
                 .from("profiles")
                 .upsert(
                   {

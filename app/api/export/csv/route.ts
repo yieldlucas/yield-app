@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
   );
   const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
   if (authError || !user) {
