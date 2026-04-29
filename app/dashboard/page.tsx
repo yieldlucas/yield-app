@@ -39,6 +39,9 @@ interface BatchItem {
   error?: string;
   supplier?: string | null;
   itemsCount?: number;
+  // Sous-état pendant 'processing' — alimenté par polling de invoices.processing_step
+  processingStep?: "extracting" | "matching" | "alerting" | null;
+  totalItemsCount?: number | null;
 }
 
 // ─── FAB Scanner ──────────────────────────────────────────
@@ -274,6 +277,23 @@ function ConciergeButton() {
 }
 
 // ─── Batch overlay ────────────────────────────────────────
+// Message dynamique pour une ligne en cours d'analyse, calé sur processing_step
+// remonté par le polling. Donne au chef l'impression d'un vrai travail en cours
+// pendant les ~15-25s d'analyse Claude.
+function stepMessage(item: BatchItem): string {
+  if (item.status === "uploading") return "Envoi de la photo...";
+  if (item.status !== "processing") return "";
+  switch (item.processingStep) {
+    case "extracting": return "Lecture des lignes de la facture...";
+    case "matching":
+      return item.totalItemsCount
+        ? `Analyse des ${item.totalItemsCount} produits détectés...`
+        : "Analyse des produits détectés...";
+    case "alerting": return "Calcul de l'impact sur vos marges...";
+    default: return "Analyse en cours...";
+  }
+}
+
 function BatchOverlay({
   items, open, onClose, onRetake,
 }: {
@@ -312,7 +332,9 @@ function BatchOverlay({
                 <p className="text-slate-400 text-xs">
                   {allFinished
                     ? `${done} traitée${done > 1 ? "s" : ""}${errored > 0 ? ` · ${errored} erreur${errored > 1 ? "s" : ""}` : ""}`
-                    : `${done}/${total} · ${current?.fileName ?? ""}`}
+                    : current
+                      ? `${done}/${total} · ${stepMessage(current) || current.fileName}`
+                      : `${done}/${total}`}
                 </p>
               </div>
             </div>
@@ -340,6 +362,9 @@ function BatchOverlay({
                       <p className="text-[10px] text-slate-400 truncate">
                         {item.supplier ?? "Fournisseur inconnu"}{item.itemsCount ? ` · ${item.itemsCount} produits` : ""}
                       </p>
+                    )}
+                    {(item.status === "uploading" || item.status === "processing") && (
+                      <p className="text-[10px] text-blue-500 truncate">{stepMessage(item)}</p>
                     )}
                     {item.status === "error" && item.error && (
                       <p className="text-[10px] text-red-400 truncate">{item.error}</p>
@@ -785,7 +810,13 @@ export default function DashboardPage() {
     }
   }
 
-  const processOne = async (file: File): Promise<{ supplier?: string | null; itemsCount?: number }> => {
+  // POST déclenche le scan en background, retourne invoice_id immédiatement.
+  // Ensuite on poll la table invoices toutes les 3s pour suivre processing_step
+  // et mettre à jour la BatchItem avec un message dynamique.
+  const processOne = async (
+    file: File,
+    onStep: (step: { processingStep?: BatchItem["processingStep"]; totalItemsCount?: number | null }) => void,
+  ): Promise<{ supplier?: string | null; itemsCount?: number }> => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
       router.replace("/");
@@ -813,15 +844,63 @@ export default function DashboardPage() {
       } catch { /* ignore */ }
       throw new Error(msg);
     }
-    const payload = await res.json().catch(() => ({}));
-    // Le edge function retourne scans_used pour MAJ optimiste du compteur
-    if (typeof payload?.scans_used === "number") {
-      setUsage(u => u ? { ...u, used: payload.scans_used } : { used: payload.scans_used, quota: QUOTA });
+    const ack = await res.json().catch(() => ({})) as { invoice_id?: string };
+    const invoiceId = ack.invoice_id;
+    if (!invoiceId) throw new Error("Réponse serveur invalide");
+
+    // ─── Polling 3s ───
+    // RLS owner_invoices laisse le user lire sa propre facture, donc client
+    // direct via supabase. Timeout dur à 90s pour ne pas poller à l'infini
+    // si l'edge function plante silencieusement.
+    const POLL_INTERVAL_MS = 3000;
+    const POLL_TIMEOUT_MS = 90_000;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+      const { data, error } = await supabase
+        .from("invoices")
+        .select("status, processing_step, total_items_count, supplier:suppliers(name)")
+        .eq("id", invoiceId)
+        .maybeSingle();
+      if (error) continue; // transient — on retente
+      if (!data) continue;
+
+      const row = data as unknown as {
+        status: string;
+        processing_step: string | null;
+        total_items_count: number | null;
+        supplier: { name: string } | null;
+      };
+
+      onStep({
+        processingStep: row.processing_step as BatchItem["processingStep"],
+        totalItemsCount: row.total_items_count,
+      });
+
+      if (row.status === "processed") {
+        // Récupère le compteur de quota mis à jour (le edge l'a incrémenté)
+        const yearMonth = new Date().toISOString().slice(0, 7);
+        const { data: u } = await supabase
+          .from("usage_stats").select("scan_count")
+          .eq("year_month", yearMonth).maybeSingle();
+        const used = (u as { scan_count?: number } | null)?.scan_count;
+        if (typeof used === "number") {
+          setUsage(prev => prev ? { ...prev, used } : { used, quota: QUOTA });
+        }
+        return {
+          supplier: row.supplier?.name ?? null,
+          itemsCount: row.total_items_count ?? undefined,
+        };
+      }
+      if (row.status === "duplicate") {
+        throw new Error("Cette facture a déjà été enregistrée.");
+      }
+      if (row.status === "error") {
+        throw new Error("Lecture impossible — réessayez avec une photo plus nette.");
+      }
     }
-    return {
-      supplier: payload?.extracted?.supplier_name ?? null,
-      itemsCount: payload?.extracted?.items?.length ?? undefined,
-    };
+    throw new Error("L'analyse prend trop de temps. Réessayez dans un moment.");
   };
 
   // Helpers pour la gestion d'erreurs dans processBatch
@@ -838,7 +917,10 @@ export default function DashboardPage() {
         // Petit délai pour donner du feedback visuel
         await new Promise(r => setTimeout(r, 400));
         setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "processing" } : x));
-        const result = await processOne((item as BatchItem & { file: File }).file);
+        const result = await processOne(
+          (item as BatchItem & { file: File }).file,
+          (step) => setBatch(b => b.map(x => x.id === item.id ? { ...x, ...step } : x)),
+        );
         setBatch(b => b.map(x => x.id === item.id ? {
           ...x, status: "done", supplier: result.supplier, itemsCount: result.itemsCount,
         } : x));

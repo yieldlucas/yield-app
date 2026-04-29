@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
@@ -179,27 +179,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Erreur création facture" }, { status: 500 });
   }
 
-  // ─── Délègue à la Supabase Edge Function ───
+  // ─── Délègue à la Supabase Edge Function en fire-and-forget ───
+  // Avant on awaitait la réponse complète (15-40s) → bloquait le client +
+  // risque de timeout Vercel à 60s. Maintenant on retourne invoice_id
+  // immédiatement, l'edge function tourne en background, et le client poll
+  // invoices.processing_step pour suivre l'avancement.
+  // `after()` (Next 15) garantit que le fetch est envoyé même après le return.
   const edgeFunctionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-invoice`;
 
-  const edgeResponse = await fetch(edgeFunctionUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${accessToken}`,
-      "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    },
-    body: JSON.stringify({ invoice_id: invoice.id }),
+  after(async () => {
+    try {
+      const res = await fetch(edgeFunctionUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+          "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        },
+        body: JSON.stringify({ invoice_id: invoice.id }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("[invoices/process] edge function failed", res.status, body);
+        // Marque la facture en erreur pour que le polling client s'arrête.
+        // Service-role nécessaire car RLS bloque sinon (pas de session ici).
+        if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+          const adminClient = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY,
+            { auth: { persistSession: false, autoRefreshToken: false } }
+          );
+          await adminClient.from("invoices")
+            .update({ status: "error" })
+            .eq("id", invoice.id);
+        }
+      }
+    } catch (err) {
+      console.error("[invoices/process] edge function fetch threw", err);
+    }
   });
 
-  if (!edgeResponse.ok) {
-    const errorBody = await edgeResponse.json().catch(() => ({}));
-    return NextResponse.json(
-      { error: "Échec traitement IA", invoice_id: invoice.id, details: errorBody },
-      { status: edgeResponse.status }
-    );
-  }
-
-  const result = await edgeResponse.json();
-  return NextResponse.json(result, { status: 200 });
+  return NextResponse.json({ invoice_id: invoice.id, status: "pending" }, { status: 202 });
 }

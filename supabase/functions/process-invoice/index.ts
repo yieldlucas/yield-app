@@ -282,17 +282,26 @@ async function processInvoice(
     }
   }
 
-  // Mise à jour métadonnées facture
+  // ─── Phase MATCHING ───
+  // Update partiel des métadonnées + processing_step + total_items_count.
+  // Permet au client de polling d'afficher "Analyse des 12 produits..."
   await sb.from("invoices").update({
     supplier_id: supplierId,
     invoice_date: extracted.invoice_date,
     invoice_number: extracted.invoice_number,
     raw_ai_response: extracted,
-    status: "processed",
+    total_items_count: extracted.items.length,
+    processing_step: "matching",
   }).eq("id", invoiceId);
 
   let itemsMatched = 0, itemsCreated = 0;
-  const alerts = [];
+  // On capture les résultats du matching pour la 2e pass (alerting),
+  // notamment previousPrice qui doit être lu AVANT d'insérer le nouveau prix.
+  const matchingResults: {
+    productId: string;
+    item: ExtractedItem;
+    previousPrice: number | null;
+  }[] = [];
 
   for (const item of extracted.items) {
     const { productId, wasCreated } = await upsertProduct(
@@ -300,12 +309,14 @@ async function processInvoice(
     );
     wasCreated ? itemsCreated++ : itemsMatched++;
 
+    // Capture le dernier prix AVANT d'insérer le nouveau (sinon getLastPrice
+    // renverrait celui qu'on est en train d'écrire).
     const previousPrice = await getLastPrice(sb, productId);
+    matchingResults.push({ productId, item, previousPrice });
 
     // Lignes flaggées needs_review : on garde la trace dans invoice_items
-    // (matched=false) mais on n'écrit PAS dans price_history ni d'alerte —
-    // un prix incohérent fausserait l'historique et déclencherait une fausse
-    // alerte de marge.
+    // (matched=false) mais on n'écrit PAS dans price_history — un prix
+    // incohérent fausserait l'historique à vie.
     if (!item.needs_review) {
       await sb.from("price_history").insert({
         product_id: productId,
@@ -315,7 +326,9 @@ async function processInvoice(
       });
     }
 
-    // Ligne de facture (toujours, pour traçabilité)
+    // Ligne de facture. original_unit_price/original_quantity = valeurs IA
+    // figées, pour permettre au chef d'éditer unit_price_ht/quantity tout en
+    // gardant la trace de la valeur extraite par Claude (cf migration 006).
     await sb.from("invoice_items").insert({
       invoice_id: invoiceId,
       product_id: productId,
@@ -326,38 +339,50 @@ async function processInvoice(
       total_price_ht: item.total_price_ht,
       vat_rate: item.vat_rate,
       matched: !wasCreated && !item.needs_review,
+      original_unit_price: item.unit_price_ht,
+      original_quantity: item.quantity,
+    });
+  }
+
+  // ─── Phase ALERTING ───
+  await sb.from("invoices").update({ processing_step: "alerting" }).eq("id", invoiceId);
+
+  const alerts = [];
+  for (const r of matchingResults) {
+    if (r.previousPrice === null || r.item.needs_review) continue;
+    const changePct = ((r.item.unit_price_ht - r.previousPrice) / r.previousPrice) * 100;
+    if (Math.abs(changePct) < PRICE_ALERT_THRESHOLD_PCT) continue;
+
+    const affectedRecipes = await getAffectedRecipes(
+      sb, r.productId, r.previousPrice, r.item.unit_price_ht
+    );
+
+    await sb.from("margin_alerts").insert({
+      restaurant_id: restaurantId,
+      product_id: r.productId,
+      invoice_id: invoiceId,
+      old_price: r.previousPrice,
+      new_price: r.item.unit_price_ht,
+      price_change_pct: Math.round(changePct * 100) / 100,
+      affected_recipes: affectedRecipes,
+      is_read: false,
     });
 
-    // Alerte uniquement si prix fiable
-    if (previousPrice !== null && !item.needs_review) {
-      const changePct = ((item.unit_price_ht - previousPrice) / previousPrice) * 100;
-
-      if (Math.abs(changePct) >= PRICE_ALERT_THRESHOLD_PCT) {
-        const affectedRecipes = await getAffectedRecipes(
-          sb, productId, previousPrice, item.unit_price_ht
-        );
-
-        await sb.from("margin_alerts").insert({
-          restaurant_id: restaurantId,
-          product_id: productId,
-          invoice_id: invoiceId,
-          old_price: previousPrice,
-          new_price: item.unit_price_ht,
-          price_change_pct: Math.round(changePct * 100) / 100,
-          affected_recipes: affectedRecipes,
-          is_read: false,
-        });
-
-        alerts.push({
-          product_name: item.raw_label,
-          old_price: previousPrice,
-          new_price: item.unit_price_ht,
-          price_change_pct: Math.round(changePct * 100) / 100,
-          affected_recipes: affectedRecipes,
-        });
-      }
-    }
+    alerts.push({
+      product_name: r.item.raw_label,
+      old_price: r.previousPrice,
+      new_price: r.item.unit_price_ht,
+      price_change_pct: Math.round(changePct * 100) / 100,
+      affected_recipes: affectedRecipes,
+    });
   }
+
+  // ─── Phase FINAL ───
+  // status='processed' est la source de vérité pour le client (arrête le polling).
+  await sb.from("invoices").update({
+    status: "processed",
+    processing_step: "processed",
+  }).eq("id", invoiceId);
 
   // Incrément quota mensuel (atomic, via fonction SQL).
   // On le fait en fin de pipeline pour ne compter QUE les scans réussis :
@@ -410,8 +435,13 @@ serve(async (req: Request) => {
     if (invoice.restaurant.owner_id !== user.id) return json({ error: "Accès refusé" }, 403);
     if (invoice.status === "processed") return json({ error: "Déjà traitée" }, 409);
 
-    // Passe en "processing"
-    await sb.from("invoices").update({ status: "processing" }).eq("id", invoice_id);
+    // Passe en "processing" + sous-état "extracting" (Claude lit l'image).
+    // Le client poll invoices.processing_step pour afficher des messages
+    // dynamiques en attendant la fin du scan.
+    await sb.from("invoices").update({
+      status: "processing",
+      processing_step: "extracting",
+    }).eq("id", invoice_id);
 
     // Téléchargement de l'image depuis Storage
     const { data: imageBlob, error: dlErr } = await sb.storage
