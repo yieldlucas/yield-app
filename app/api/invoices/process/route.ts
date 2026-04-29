@@ -6,6 +6,10 @@ export const runtime = "nodejs";
 // par BL, donc on autorise jusqu'à 60s pour rester safe sur Pro.
 export const maxDuration = 60;
 
+// Quota mensuel inclus dans l'offre lancement (19.99€). Au-delà : prompt
+// d'upgrade vers Pro 39.99€ (quota plus élevé). Voir migration 005.
+const MONTHLY_SCAN_QUOTA = 200;
+
 // Pipeline :
 // 1. Auth via Bearer token (cohérent avec le reste de l'API, client en localStorage)
 // 2. Récupère le restaurant lié au user
@@ -96,6 +100,30 @@ export async function POST(request: NextRequest) {
 
   if (!restaurant) {
     return NextResponse.json({ error: "Aucun restaurant trouvé" }, { status: 404 });
+  }
+
+  // ─── Quota mensuel ───
+  // On bloque AVANT l'upload + IA pour ne pas brûler du token Claude inutilement.
+  // Le compteur est incrémenté côté edge function uniquement sur scan réussi.
+  const yearMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM' UTC
+  const { data: usage } = await supabase
+    .from("usage_stats")
+    .select("scan_count")
+    .eq("restaurant_id", restaurant.id)
+    .eq("year_month", yearMonth)
+    .maybeSingle();
+
+  const scansUsed = (usage as { scan_count?: number } | null)?.scan_count ?? 0;
+  if (scansUsed >= MONTHLY_SCAN_QUOTA) {
+    return NextResponse.json(
+      {
+        error: `Vous avez utilisé l'intégralité de votre forfait mensuel (${MONTHLY_SCAN_QUOTA} scans). Pour continuer à scanner ce mois-ci et débloquer les fonctions Business Intelligence, passez au forfait Pro à 39,99€/mois.`,
+        code: "QUOTA_EXCEEDED",
+        quota: MONTHLY_SCAN_QUOTA,
+        used: scansUsed,
+      },
+      { status: 402 }
+    );
   }
 
   // ─── Validation fichier ───

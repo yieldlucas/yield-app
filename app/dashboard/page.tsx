@@ -60,6 +60,92 @@ function ScannerFAB({ onClick, show }: { onClick: () => void; show: boolean }) {
   );
 }
 
+// ─── Camera Guide (overlay d'instructions avant ouverture caméra) ───────
+// L'app caméra native du téléphone gère mieux que <video>+getUserMedia
+// (autofocus, balance des blancs, HDR). On ne peut donc pas dessiner un
+// overlay PAR-DESSUS la caméra système — d'où ce sas d'instructions visuel
+// AVANT de l'ouvrir, pour que le chef cadre bien sa facture du premier coup.
+function CameraGuide({ open, onConfirm, onCancel }: { open: boolean; onConfirm: () => void; onCancel: () => void }) {
+  if (!open) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ y: 60, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 60, opacity: 0 }}
+        className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md p-6 shadow-xl"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-slate-900 font-bold text-lg mb-1">Cadrez votre facture</h2>
+        <p className="text-slate-500 text-sm mb-5">
+          Une bonne photo = une lecture parfaite. Posez le BL sur fond uni et restez à plat.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          {/* OK : facture droite, bien cadrée */}
+          <div className="flex flex-col items-center">
+            <div className="w-full aspect-[3/4] rounded-xl border-4 border-emerald-500 bg-emerald-50 flex items-center justify-center p-3 mb-2">
+              <svg viewBox="0 0 60 80" className="w-full h-full">
+                <rect x="10" y="8" width="40" height="64" rx="2" fill="white" stroke="#10b981" strokeWidth="1.5"/>
+                <line x1="16" y1="20" x2="44" y2="20" stroke="#94a3b8" strokeWidth="1.5"/>
+                <line x1="16" y1="28" x2="44" y2="28" stroke="#cbd5e1" strokeWidth="1"/>
+                <line x1="16" y1="36" x2="44" y2="36" stroke="#cbd5e1" strokeWidth="1"/>
+                <line x1="16" y1="44" x2="44" y2="44" stroke="#cbd5e1" strokeWidth="1"/>
+                <line x1="16" y1="52" x2="44" y2="52" stroke="#cbd5e1" strokeWidth="1"/>
+                <line x1="16" y1="60" x2="36" y2="60" stroke="#cbd5e1" strokeWidth="1"/>
+              </svg>
+            </div>
+            <p className="text-emerald-700 text-xs font-semibold text-center">✓ Droite et entière</p>
+          </div>
+
+          {/* KO : facture de travers, coupée */}
+          <div className="flex flex-col items-center">
+            <div className="w-full aspect-[3/4] rounded-xl border-4 border-rose-500 bg-rose-50 flex items-center justify-center p-3 mb-2 overflow-hidden">
+              <svg viewBox="0 0 60 80" className="w-full h-full">
+                <g transform="rotate(-18 30 40)">
+                  <rect x="14" y="10" width="40" height="64" rx="2" fill="white" stroke="#f43f5e" strokeWidth="1.5"/>
+                  <line x1="20" y1="22" x2="48" y2="22" stroke="#94a3b8" strokeWidth="1.5"/>
+                  <line x1="20" y1="30" x2="48" y2="30" stroke="#cbd5e1" strokeWidth="1"/>
+                  <line x1="20" y1="38" x2="48" y2="38" stroke="#cbd5e1" strokeWidth="1"/>
+                  <line x1="20" y1="46" x2="48" y2="46" stroke="#cbd5e1" strokeWidth="1"/>
+                </g>
+              </svg>
+            </div>
+            <p className="text-rose-700 text-xs font-semibold text-center">✗ Inclinée ou coupée</p>
+          </div>
+        </div>
+
+        <ul className="text-slate-600 text-sm space-y-1.5 mb-5">
+          <li className="flex gap-2"><span className="text-emerald-500">•</span> Lumière du jour ou plafonnier (pas de flash)</li>
+          <li className="flex gap-2"><span className="text-emerald-500">•</span> Toute la facture dans le cadre, marges incluses</li>
+          <li className="flex gap-2"><span className="text-emerald-500">•</span> Téléphone parallèle à la table</li>
+        </ul>
+
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-[2] px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm shadow-blue-lg flex items-center justify-center gap-2"
+          >
+            <Camera size={16} /> J'y vais
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 // ─── Conciergerie Chef + FAQ Drawer ───────────────────────
 const FAQ_ITEMS: { q: string; Icon: typeof Database; a: string }[] = [
   {
@@ -473,12 +559,21 @@ export default function DashboardPage() {
   const [subscriptionActivated, setSubscriptionActivated] = useState(false);
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
+  const [cameraGuideOpen, setCameraGuideOpen] = useState(false);
+  // Quota mensuel : { used, quota } — null tant que pas chargé
+  const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  // Garde-fou : `openCamera` ouvre l'appareil photo en direct (capture="environment").
+  // Le bouton "Scanner" affiche d'abord un guide de cadrage (cf CameraGuide ci-dessous),
+  // puis sur confirmation déclenche la caméra native (capture="environment").
   // `openGallery` ouvre le picker fichiers/galerie pour les anciennes factures.
-  const openCamera = () => cameraInputRef.current?.click();
+  const openCamera = () => setCameraGuideOpen(true);
+  const launchNativeCamera = () => {
+    setCameraGuideOpen(false);
+    cameraInputRef.current?.click();
+  };
   const openGallery = () => galleryInputRef.current?.click();
 
   const callApi = async (path: string, init: RequestInit = {}) => {
@@ -637,8 +732,22 @@ export default function DashboardPage() {
     setShowOnboarding(false);
   };
 
+  const QUOTA = 200;
+
+  const loadUsage = async () => {
+    const yearMonth = new Date().toISOString().slice(0, 7);
+    const { data } = await supabase
+      .from("usage_stats")
+      .select("scan_count")
+      .eq("year_month", yearMonth)
+      .maybeSingle();
+    const used = (data as { scan_count?: number } | null)?.scan_count ?? 0;
+    setUsage({ used, quota: QUOTA });
+  };
+
   const loadMockData = () => {
     setLoading(false);
+    void loadUsage();
     setAlerts([
       {
         id: "1", product_name: "Filet de saumon",
@@ -662,11 +771,17 @@ export default function DashboardPage() {
   };
 
   // Traite un fichier unique et retourne le résultat (pour pipeline batch)
-  // Erreur dédiée pour qu'on puisse intercepter "essai expiré" et ouvrir le paiement
+  // Erreurs dédiées pour qu'on puisse intercepter et déclencher le bon flow
   class PaymentRequiredError extends Error {
     constructor(message: string) {
       super(message);
       this.name = "PaymentRequiredError";
+    }
+  }
+  class QuotaExceededError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "QuotaExceededError";
     }
   }
 
@@ -685,6 +800,9 @@ export default function DashboardPage() {
     });
     if (res.status === 402) {
       const j = await res.json().catch(() => ({}));
+      if (j?.code === "QUOTA_EXCEEDED") {
+        throw new QuotaExceededError(j?.error ?? "Quota mensuel atteint");
+      }
       throw new PaymentRequiredError(j?.error ?? "Abonnement requis");
     }
     if (!res.ok) {
@@ -696,15 +814,21 @@ export default function DashboardPage() {
       throw new Error(msg);
     }
     const payload = await res.json().catch(() => ({}));
+    // Le edge function retourne scans_used pour MAJ optimiste du compteur
+    if (typeof payload?.scans_used === "number") {
+      setUsage(u => u ? { ...u, used: payload.scans_used } : { used: payload.scans_used, quota: QUOTA });
+    }
     return {
       supplier: payload?.extracted?.supplier_name ?? null,
       itemsCount: payload?.extracted?.items?.length ?? undefined,
     };
   };
 
-  // Garde la classe accessible au scope de processBatch
+  // Helpers pour la gestion d'erreurs dans processBatch
   const isPaymentRequired = (err: unknown): boolean =>
     err instanceof Error && err.name === "PaymentRequiredError";
+  const isQuotaExceeded = (err: unknown): boolean =>
+    err instanceof Error && err.name === "QuotaExceededError";
 
   // Lance le traitement séquentiel du lot (non-bloquant pour l'UI)
   const processBatch = async (initial: BatchItem[]) => {
@@ -720,6 +844,20 @@ export default function DashboardPage() {
         } : x));
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Erreur inconnue";
+        // ⭐ 402 + QUOTA_EXCEEDED → quota mensuel atteint : on stoppe le batch
+        // et on ouvre la modal d'upgrade vers Pro (39.99€). Pas de redirect
+        // Stripe automatique : c'est un upsell, pas une obligation de paiement.
+        if (isQuotaExceeded(err)) {
+          setBatch(b => b.map(x => {
+            if (x.id === item.id) return { ...x, status: "error", error: "Quota mensuel atteint" };
+            if (x.status === "queued") return { ...x, status: "error", error: "Lot annulé : quota atteint" };
+            return x;
+          }));
+          setBatchOpen(false);
+          setQuotaExceeded(true);
+          setUsage(u => u ? { ...u, used: u.quota } : { used: QUOTA, quota: QUOTA });
+          return;
+        }
         // ⭐ 402 → essai expiré : on stoppe le batch et on déclenche le paiement
         if (isPaymentRequired(err)) {
           setBatch(b => b.map(x => {
@@ -815,6 +953,25 @@ export default function DashboardPage() {
                 )}
               </button>
             )}
+            {usage && (() => {
+              const pct = (usage.used / usage.quota) * 100;
+              const reached = pct >= 100;
+              const tone = reached ? "text-rose-600 bg-rose-50 border-rose-200"
+                : pct >= 80 ? "text-amber-700 bg-amber-50 border-amber-200"
+                : "text-slate-500 bg-slate-50 border-slate-200";
+              const className = `px-2 py-1 rounded-lg border text-[11px] font-semibold tabular-nums ${tone}`;
+              const label = `${usage.used}/${usage.quota}`;
+              const tooltip = `Consommation : ${usage.used} / ${usage.quota} scans ce mois`;
+              return reached ? (
+                <button onClick={() => setQuotaExceeded(true)} className={className} title={tooltip} aria-label="Quota mensuel atteint">
+                  {label}
+                </button>
+              ) : (
+                <span className={className} title={tooltip} aria-label="Quota mensuel">
+                  {label}
+                </span>
+              );
+            })()}
             <div className="relative" title={processedToday > 0 ? `${processedToday} BL traités aujourd'hui` : "Aucune notif"}>
               <Bell size={20} className={bellBadge > 0 ? "text-slate-700" : "text-slate-400"} />
               {bellBadge > 0 && (
@@ -1109,6 +1266,62 @@ export default function DashboardPage() {
         }}
       />
       <ScannerFAB onClick={openCamera} show={invoices.length > 0} />
+      <CameraGuide
+        open={cameraGuideOpen}
+        onConfirm={launchNativeCamera}
+        onCancel={() => setCameraGuideOpen(false)}
+      />
+      {quotaExceeded && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+          onClick={() => setQuotaExceeded(false)}
+        >
+          <motion.div
+            initial={{ y: 60, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-md p-6 shadow-xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center mb-4">
+              <Sparkles size={22} className="text-blue-600" />
+            </div>
+            <h2 className="text-slate-900 font-bold text-lg mb-2">
+              Vous scannez beaucoup — bravo !
+            </h2>
+            <p className="text-slate-600 text-sm leading-relaxed mb-2">
+              Vous avez utilisé vos <strong>{QUOTA} scans</strong> inclus dans le forfait Lancement ce mois-ci.
+              C'est le signe d'une cuisine très active.
+            </p>
+            <p className="text-slate-600 text-sm leading-relaxed mb-5">
+              Pour continuer à scanner sans limite jusqu'à la fin du mois et débloquer les outils Business
+              Intelligence (détection d'écarts fournisseur, export comptable Sage/EBP, alertes marge cassée
+              en temps réel), passez au forfait <strong>Pro à 39,99€/mois</strong>.
+            </p>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 mb-5">
+              <p className="text-slate-500 text-xs leading-relaxed">
+                Le quota se réinitialise automatiquement le 1er du mois prochain. Aucune action requise si vous
+                préférez attendre.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setQuotaExceeded(false)}
+                className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm"
+              >
+                Plus tard
+              </button>
+              <button
+                onClick={() => { setQuotaExceeded(false); void startCheckout(); }}
+                className="flex-[2] px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm shadow-blue-lg flex items-center justify-center gap-2"
+              >
+                <Sparkles size={16} /> Découvrir le Pro
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
       <ConciergeButton />
       <BatchOverlay
         items={batch}

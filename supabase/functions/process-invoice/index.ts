@@ -52,7 +52,14 @@ interface AffectedRecipe {
 // ─── Claude Vision Prompt ─────────────────────────────────
 const EXTRACTION_PROMPT = `Tu es un assistant spécialisé dans l'analyse de factures de restauration française.
 
-Analyse cette facture fournisseur et extrais les informations suivantes au format JSON strict.
+PRÉTRAITEMENT (à faire mentalement avant l'extraction) :
+- Si la facture est inclinée ou photographiée de biais, redresse-la mentalement (perspective) avant de lire.
+- Si une zone est sombre ou floue à cause d'une mauvaise lumière, augmente mentalement le contraste localement pour décoder les chiffres.
+- Si une ligne est barrée ou rayée à la main, ignore-la (c'est une correction du fournisseur).
+- Si tu vois une signature, un tampon ou une note manuscrite par-dessus une ligne, lis quand même la ligne d'origine en dessous.
+- Si l'image est partiellement coupée (un bord manque), extrais quand même ce qui est visible et signale-le dans extraction_notes.
+
+Analyse ensuite cette facture fournisseur et extrais les informations suivantes au format JSON strict.
 
 RÈGLES D'EXTRACTION :
 - Les prix sont TOUJOURS en euros HT (hors taxe)
@@ -352,7 +359,18 @@ async function processInvoice(
     }
   }
 
-  return { invoice_id: invoiceId, extracted, items_matched: itemsMatched, items_created: itemsCreated, alerts };
+  // Incrément quota mensuel (atomic, via fonction SQL).
+  // On le fait en fin de pipeline pour ne compter QUE les scans réussis :
+  // un duplicate (qui throw plus haut) ou une erreur Claude n'est pas facturé.
+  let scansUsed: number | null = null;
+  try {
+    const { data } = await sb.rpc("increment_scan_usage", { p_restaurant_id: restaurantId });
+    scansUsed = typeof data === "number" ? data : null;
+  } catch (err) {
+    console.error("[process-invoice] increment_scan_usage failed:", err);
+  }
+
+  return { invoice_id: invoiceId, extracted, items_matched: itemsMatched, items_created: itemsCreated, alerts, scans_used: scansUsed };
 }
 
 // ─── Entry point ──────────────────────────────────────────
