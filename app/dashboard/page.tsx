@@ -1701,9 +1701,7 @@ export default function DashboardPage() {
                     <InvoiceCard
                       key={inv.id}
                       inv={inv}
-                      // Page détail livrée au batch 6D — onClick désactivé en attendant.
-                      // Évite d'envoyer le chef sur une 404.
-                      onClick={undefined}
+                      onClick={inv.status === "processed" ? () => router.push(`/dashboard/invoices/${inv.id}`) : undefined}
                     />
                   ))
                 )}
