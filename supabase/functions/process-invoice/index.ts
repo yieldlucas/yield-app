@@ -377,11 +377,32 @@ async function processInvoice(
     });
   }
 
+  // ─── Calcul totaux & variation globale (cf migration 007) ───
+  // total_ht = somme des items réels (utilisé pour la timeline dashboard).
+  // variation_pct = comparaison pondérée vs prix précédents quand on en a.
+  // On ignore les items needs_review pour ne pas biaiser avec un prix faux.
+  let totalHt = 0;
+  let baseline = 0;
+  let currentComparable = 0;
+  for (const r of matchingResults) {
+    if (r.item.needs_review) continue;
+    totalHt += r.item.total_price_ht;
+    if (r.previousPrice !== null && r.previousPrice > 0) {
+      baseline += r.previousPrice * r.item.quantity;
+      currentComparable += r.item.unit_price_ht * r.item.quantity;
+    }
+  }
+  const variationPct = baseline > 0
+    ? Math.round(((currentComparable - baseline) / baseline) * 10000) / 100
+    : null;
+
   // ─── Phase FINAL ───
   // status='processed' est la source de vérité pour le client (arrête le polling).
   await sb.from("invoices").update({
     status: "processed",
     processing_step: "processed",
+    total_ht: Math.round(totalHt * 100) / 100,
+    variation_pct: variationPct,
   }).eq("id", invoiceId);
 
   // Incrément quota mensuel (atomic, via fonction SQL).

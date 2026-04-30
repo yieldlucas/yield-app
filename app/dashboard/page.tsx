@@ -28,9 +28,12 @@ interface Alert {
 interface RecentInvoice {
   id: string;
   supplier_name: string;
-  invoice_date: string;
-  status: "pending" | "processing" | "processed" | "error";
+  invoice_date: string;            // 'YYYY-MM-DD' ou ISO complet
+  status: "pending" | "processing" | "processed" | "error" | "duplicate";
   items_count: number;
+  total_ht?: number | null;
+  variation_pct?: number | null;   // null = pas de comparaison possible
+  processing_step?: "extracting" | "matching" | "alerting" | "processed" | null;
 }
 
 interface BatchItem {
@@ -147,6 +150,123 @@ function CameraGuide({ open, onConfirm, onCancel }: { open: boolean; onConfirm: 
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+// ─── InvoiceCard ─────────────────────────────────────────
+// Carte timeline d'un BL, avec variation globale colorée et état "processing"
+// dynamique. Le code couleur strict :
+//   - hausse > 7%   → rose-500  (#EF4444)
+//   - baisse > 0%   → emerald-500 (#10B981)
+//   - sinon         → slate-400 (neutre)
+// Le seuil 7% est aligné avec PRICE_ALERT_THRESHOLD_PCT côté edge (cf O5).
+const VARIATION_ALERT_PCT = 7;
+
+function formatInvoiceDate(raw: string): string {
+  // Accepte 'YYYY-MM-DD' ou ISO. Renvoie "Aujourd'hui, 14:30" si jour J,
+  // "Hier, 14:30" si J-1, "28 avril" sinon, "28 avril 2025" si autre année.
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return raw;
+  const now = new Date();
+  const isSameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const time = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  if (isSameDay(d, now)) return `Aujourd'hui, ${time}`;
+  if (isSameDay(d, yesterday)) return `Hier, ${time}`;
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  }
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function VariationBadge({ pct }: { pct: number | null | undefined }) {
+  if (pct == null) {
+    return (
+      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-50 text-slate-400 border border-slate-100">
+        —
+      </span>
+    );
+  }
+  const tone = pct >= VARIATION_ALERT_PCT
+    ? "bg-rose-50 text-rose-600 border-rose-100"
+    : pct < 0
+      ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+      : "bg-slate-50 text-slate-500 border-slate-100";
+  const arrow = pct >= VARIATION_ALERT_PCT ? "↗" : pct < 0 ? "↘" : "→";
+  const sign = pct > 0 ? "+" : "";
+  return (
+    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border tabular-nums ${tone}`}>
+      {arrow} {sign}{pct.toFixed(1)}%
+    </span>
+  );
+}
+
+function InvoiceCard({ inv, onClick }: { inv: RecentInvoice; onClick?: () => void }) {
+  const isProcessing = inv.status === "processing" || inv.status === "pending";
+  const isError = inv.status === "error";
+  const isDuplicate = inv.status === "duplicate";
+
+  const stepLabel = inv.processing_step === "extracting"
+    ? "Lecture des lignes..."
+    : inv.processing_step === "matching"
+      ? "Analyse des produits..."
+      : inv.processing_step === "alerting"
+        ? "Calcul des marges..."
+        : "Analyse en cours...";
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick || isProcessing}
+      className="w-full text-left rounded-xl bg-white shadow-sm border border-slate-100 hover:border-slate-200 hover:shadow transition-all p-4 disabled:cursor-default"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-slate-900 text-base font-bold truncate leading-tight">
+            {inv.supplier_name || "Fournisseur inconnu"}
+          </p>
+          <p className="text-slate-400 text-xs mt-0.5">
+            {formatInvoiceDate(inv.invoice_date)}{inv.items_count ? ` · ${inv.items_count} produits` : ""}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+          {isProcessing ? (
+            <div className="flex items-center gap-2 text-blue-600">
+              <div className="w-3 h-3 border-2 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+              <span className="text-[11px] font-medium">{stepLabel}</span>
+            </div>
+          ) : isError ? (
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-100">
+              Lecture impossible
+            </span>
+          ) : isDuplicate ? (
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-100">
+              Doublon
+            </span>
+          ) : (
+            <>
+              <p className="text-slate-900 text-base font-semibold tabular-nums leading-none">
+                {inv.total_ht != null
+                  ? `${inv.total_ht.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`
+                  : "—"}
+              </p>
+              <VariationBadge pct={inv.variation_pct} />
+            </>
+          )}
+        </div>
+      </div>
+      {isProcessing && (
+        <div className="mt-3 h-0.5 w-full bg-slate-100 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-blue-500 rounded-full"
+            initial={{ width: "10%" }}
+            animate={{ width: ["10%", "55%", "85%", "10%"] }}
+            transition={{ repeat: Infinity, duration: 2.4, ease: "easeInOut" }}
+          />
+        </div>
+      )}
+    </button>
   );
 }
 
@@ -667,22 +787,6 @@ function OnboardingModal({ show, onClose, onStart }: { show: boolean; onClose: (
   );
 }
 
-// ─── Status badge ─────────────────────────────────────────
-function StatusBadge({ status }: { status: RecentInvoice["status"] }) {
-  const map = {
-    processed: "bg-blue-50 text-blue-600",
-    processing: "bg-amber-50 text-amber-600",
-    error: "bg-red-50 text-red-500",
-    pending: "bg-slate-100 text-slate-500",
-  };
-  const labels = { processed: "Traitée", processing: "Analyse en cours", error: "Erreur", pending: "En attente" };
-  return (
-    <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 ${map[status]}`}>
-      {labels[status]}
-    </span>
-  );
-}
-
 // ─── Dashboard ────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter();
@@ -709,6 +813,7 @@ export default function DashboardPage() {
   // que le chef n'a pas cliqué "Envoyer le lot". Survit aux reloads et
   // pertes de réseau.
   const [stack, setStack] = useState<StackItem[]>([]);
+  const [invoiceFilter, setInvoiceFilter] = useState<"all" | "rising" | "this_month">("all");
   // Quota mensuel : { used, quota } — null tant que pas chargé
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
@@ -897,9 +1002,50 @@ export default function DashboardPage() {
     setUsage({ used, quota: QUOTA });
   };
 
+  // Charge les vraies factures depuis Supabase (RLS owner_invoices laisse
+  // le user lire les siennes via le client browser). On limite à 30 — au-delà
+  // on ajoutera une pagination dans une V2.
+  const loadInvoices = async () => {
+    const { data, error } = await supabase
+      .from("invoices")
+      .select(`
+        id, status, processing_step, total_ht, variation_pct,
+        invoice_date, created_at, total_items_count,
+        supplier:suppliers(name)
+      `)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    if (error || !data) return;
+
+    type Row = {
+      id: string;
+      status: RecentInvoice["status"];
+      processing_step: RecentInvoice["processing_step"];
+      total_ht: number | null;
+      variation_pct: number | null;
+      invoice_date: string | null;
+      created_at: string;
+      total_items_count: number | null;
+      supplier: { name: string } | null;
+    };
+    const rows = data as unknown as Row[];
+    setInvoices(rows.map(r => ({
+      id: r.id,
+      supplier_name: r.supplier?.name ?? "Fournisseur inconnu",
+      invoice_date: r.invoice_date ?? r.created_at, // fallback si l'IA n'a pas extrait la date
+      status: r.status,
+      items_count: r.total_items_count ?? 0,
+      total_ht: r.total_ht,
+      variation_pct: r.variation_pct,
+      processing_step: r.processing_step,
+    })));
+  };
+
   const loadMockData = () => {
     setLoading(false);
     void loadUsage();
+    void loadInvoices();
+    // Alerts toujours mockées sur ce batch — vrai loader dans le 6D.
     setAlerts([
       {
         id: "1", product_name: "Filet de saumon",
@@ -917,10 +1063,17 @@ export default function DashboardPage() {
         is_read: false, created_at: new Date().toISOString(),
       },
     ]);
-    setInvoices([
-      { id: "1", supplier_name: "Metro Cash & Carry", invoice_date: "2026-04-22", status: "processed", items_count: 12 },
-    ]);
   };
+
+  // Auto-refresh des factures tant qu'au moins une est en processing.
+  // Évite que la timeline reste figée pendant qu'un scan tourne en background.
+  useEffect(() => {
+    const hasProcessing = invoices.some(i => i.status === "processing" || i.status === "pending");
+    if (!hasProcessing) return;
+    const t = setInterval(() => { void loadInvoices(); }, 3000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoices]);
 
   // Traite un fichier unique et retourne le résultat (pour pipeline batch)
   // Erreurs dédiées pour qu'on puisse intercepter et déclencher le bon flow
@@ -1114,7 +1267,9 @@ export default function DashboardPage() {
         setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "error", error: msg } : x));
       }
     }
-    loadMockData();
+    // Recharge les factures après le batch (les nouvelles apparaissent ou
+    // changent d'état si le polling avait déjà capturé l'état final).
+    void loadInvoices();
   };
 
   // handleFiles n'auto-process plus : on pousse les photos dans le stack
@@ -1474,42 +1629,88 @@ export default function DashboardPage() {
         )}
 
         {/* Bons de Livraison */}
-        {invoices.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-slate-900 font-semibold text-base">Bons de Livraison</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={openGallery}
-                  className="text-slate-400 hover:text-blue-600 transition-colors text-xs flex items-center gap-1 font-medium"
-                  title="Importer une facture déjà prise en photo"
-                >
-                  <FolderOpen size={13} /> Importer
-                </button>
-                <button
-                  onClick={openCamera}
-                  className="label-blue text-xs px-3 py-1.5 rounded-full font-semibold flex items-center gap-1"
-                >
-                  <Camera size={12} /> Scanner
-                </button>
-              </div>
-            </div>
-            <div className="space-y-3">
-              {invoices.map(inv => (
-                <div key={inv.id} className="card rounded-2xl p-4 flex items-center gap-3">
-                  <div className="w-9 h-9 bg-slate-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <FileText size={16} className="text-slate-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-slate-800 text-sm font-medium truncate">{inv.supplier_name}</p>
-                    <p className="text-slate-400 text-xs">{inv.invoice_date} · {inv.items_count} produits</p>
-                  </div>
-                  <StatusBadge status={inv.status} />
+        {invoices.length > 0 && (() => {
+          // Filtre courant
+          const now = new Date();
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const filtered = invoices.filter(inv => {
+            if (invoiceFilter === "rising") {
+              return (inv.variation_pct ?? 0) >= VARIATION_ALERT_PCT;
+            }
+            if (invoiceFilter === "this_month") {
+              const d = new Date(inv.invoice_date);
+              return !isNaN(d.getTime()) && d >= monthStart;
+            }
+            return true;
+          });
+
+          const chips: { key: typeof invoiceFilter; label: string }[] = [
+            { key: "all",        label: "Tout" },
+            { key: "rising",     label: "En hausse ↗" },
+            { key: "this_month", label: "Ce mois" },
+          ];
+
+          return (
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-slate-900 font-semibold text-base">Bons de Livraison</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openGallery}
+                    className="text-slate-400 hover:text-blue-600 transition-colors text-xs flex items-center gap-1 font-medium"
+                    title="Importer une facture déjà prise en photo"
+                  >
+                    <FolderOpen size={13} /> Importer
+                  </button>
+                  <button
+                    onClick={openCamera}
+                    className="label-blue text-xs px-3 py-1.5 rounded-full font-semibold flex items-center gap-1"
+                  >
+                    <Camera size={12} /> Scanner
+                  </button>
                 </div>
-              ))}
-            </div>
-          </motion.div>
-        )}
+              </div>
+
+              {/* Filter chips */}
+              <div className="flex gap-2 mb-3 -mx-1 overflow-x-auto px-1 scrollbar-none">
+                {chips.map(c => {
+                  const active = invoiceFilter === c.key;
+                  return (
+                    <button
+                      key={c.key}
+                      onClick={() => setInvoiceFilter(c.key)}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        active
+                          ? "bg-blue-600 text-white border-blue-600"
+                          : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="space-y-2.5">
+                {filtered.length === 0 ? (
+                  <div className="rounded-xl bg-slate-50 border border-slate-100 p-5 text-center">
+                    <p className="text-slate-400 text-xs">Aucune facture ne correspond à ce filtre.</p>
+                  </div>
+                ) : (
+                  filtered.map(inv => (
+                    <InvoiceCard
+                      key={inv.id}
+                      inv={inv}
+                      // Page détail livrée au batch 6D — onClick désactivé en attendant.
+                      // Évite d'envoyer le chef sur une 404.
+                      onClick={undefined}
+                    />
+                  ))
+                )}
+              </div>
+            </motion.div>
+          );
+        })()}
 
         {/* Rendement nominal */}
         {!loading && alerts.length === 0 && invoices.length > 0 && (
