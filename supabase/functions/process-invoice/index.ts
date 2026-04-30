@@ -488,21 +488,29 @@ serve(async (req: Request) => {
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     const base64 = btoa(binary);
 
+    // Détection du type de fichier : Claude API distingue 'image' (jpg/png/webp/gif)
+    // de 'document' (pdf). Avant on envoyait tout en image/jpeg → les PDFs étaient
+    // refusés par l'API.
     const ext = invoice.image_path.split(".").pop()?.toLowerCase() ?? "jpg";
-    const mediaType = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+    const isPdf = ext === "pdf";
+    const imageMediaType = ext === "png" ? "image/png"
+      : ext === "webp" ? "image/webp"
+      : ext === "gif" ? "image/gif"
+      : "image/jpeg";
 
-    // Claude Vision
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+
+    const fileBlock = isPdf
+      ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: base64 } }
+      : { type: "image" as const, source: { type: "base64" as const, media_type: imageMediaType, data: base64 } };
 
     const claudeResponse = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 4096,
       messages: [{
         role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
-          { type: "text", text: EXTRACTION_PROMPT },
-        ],
+        // deno-lint-ignore no-explicit-any
+        content: [fileBlock as any, { type: "text", text: EXTRACTION_PROMPT }],
       }],
     });
 
