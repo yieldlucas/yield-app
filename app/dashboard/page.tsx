@@ -1029,15 +1029,69 @@ export default function DashboardPage() {
       supplier: { name: string } | null;
     };
     const rows = data as unknown as Row[];
-    setInvoices(rows.map(r => ({
+    const next: RecentInvoice[] = rows.map(r => ({
       id: r.id,
       supplier_name: r.supplier?.name ?? "Fournisseur inconnu",
-      invoice_date: r.invoice_date ?? r.created_at, // fallback si l'IA n'a pas extrait la date
+      invoice_date: r.invoice_date ?? r.created_at,
       status: r.status,
       items_count: r.total_items_count ?? 0,
       total_ht: r.total_ht,
       variation_pct: r.variation_pct,
       processing_step: r.processing_step,
+    }));
+
+    // Skip-update si rien n'a changé : évite un re-render complet du dashboard
+    // (1800 lignes de JSX) à chaque tick de polling quand l'edge function n'a
+    // pas encore avancé.
+    setInvoices(prev => {
+      if (prev.length !== next.length) return next;
+      for (let i = 0; i < next.length; i++) {
+        const a = prev[i], b = next[i];
+        if (a.id !== b.id || a.status !== b.status || a.processing_step !== b.processing_step
+          || a.total_ht !== b.total_ht || a.variation_pct !== b.variation_pct
+          || a.items_count !== b.items_count) {
+          return next;
+        }
+      }
+      return prev;
+    });
+  };
+
+  // Vraies alertes margin_alerts (RLS owner_margin_alerts laisse le user lire
+  // les siennes). Joint le nom du produit pour l'affichage. Limité à 10
+  // alertes non-lues pour ne pas inonder le dashboard.
+  const loadAlerts = async () => {
+    const { data, error } = await supabase
+      .from("margin_alerts")
+      .select(`
+        id, price_change_pct, old_price, new_price, affected_recipes,
+        is_read, created_at,
+        product:products(name)
+      `)
+      .eq("is_read", false)
+      .order("created_at", { ascending: false })
+      .limit(10);
+    if (error || !data) return;
+    type Row = {
+      id: string;
+      price_change_pct: number;
+      old_price: number;
+      new_price: number;
+      affected_recipes: { name: string; margin_impact_pts: number }[] | null;
+      is_read: boolean;
+      created_at: string;
+      product: { name: string } | null;
+    };
+    const rows = data as unknown as Row[];
+    setAlerts(rows.map(r => ({
+      id: r.id,
+      product_name: r.product?.name ?? "Produit inconnu",
+      price_change_pct: Number(r.price_change_pct),
+      old_price: Number(r.old_price),
+      new_price: Number(r.new_price),
+      affected_recipes: r.affected_recipes ?? [],
+      is_read: r.is_read,
+      created_at: r.created_at,
     })));
   };
 
@@ -1045,35 +1099,20 @@ export default function DashboardPage() {
     setLoading(false);
     void loadUsage();
     void loadInvoices();
-    // Alerts toujours mockées sur ce batch — vrai loader dans le 6D.
-    setAlerts([
-      {
-        id: "1", product_name: "Filet de saumon",
-        price_change_pct: 14.2, old_price: 16.20, new_price: 18.50,
-        affected_recipes: [
-          { name: "Tartare de saumon", margin_impact_pts: 3.2 },
-          { name: "Pavé grillé purée", margin_impact_pts: 2.1 },
-        ],
-        is_read: false, created_at: new Date().toISOString(),
-      },
-      {
-        id: "2", product_name: "Huile d'olive extra vierge",
-        price_change_pct: 5.1, old_price: 27.50, new_price: 28.90,
-        affected_recipes: [{ name: "Salade niçoise", margin_impact_pts: 0.9 }],
-        is_read: false, created_at: new Date().toISOString(),
-      },
-    ]);
+    void loadAlerts();
   };
 
   // Auto-refresh des factures tant qu'au moins une est en processing.
-  // Évite que la timeline reste figée pendant qu'un scan tourne en background.
+  // Le useMemo + dep boolean stable évite de tear-down/rebuild l'interval
+  // à chaque tick (vs déps `[invoices]` qui le recréait toutes les 3s).
+  const hasProcessing = invoices.some(i => i.status === "processing" || i.status === "pending");
   useEffect(() => {
-    const hasProcessing = invoices.some(i => i.status === "processing" || i.status === "pending");
     if (!hasProcessing) return;
     const t = setInterval(() => { void loadInvoices(); }, 3000);
     return () => clearInterval(t);
+    // loadInvoices est stable au sein du même render, dep volontairement omise.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoices]);
+  }, [hasProcessing]);
 
   // Traite un fichier unique et retourne le résultat (pour pipeline batch)
   // Erreurs dédiées pour qu'on puisse intercepter et déclencher le bon flow
@@ -1267,9 +1306,10 @@ export default function DashboardPage() {
         setBatch(b => b.map(x => x.id === item.id ? { ...x, status: "error", error: msg } : x));
       }
     }
-    // Recharge les factures après le batch (les nouvelles apparaissent ou
-    // changent d'état si le polling avait déjà capturé l'état final).
+    // Recharge factures + alertes : un scan peut créer de nouvelles
+    // margin_alerts (variation prix > 7%) qu'on doit afficher.
     void loadInvoices();
+    void loadAlerts();
   };
 
   // handleFiles n'auto-process plus : on pousse les photos dans le stack

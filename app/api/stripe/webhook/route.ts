@@ -18,25 +18,14 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  console.log("[stripe/webhook] RECU : Webhook Stripe", {
-    method: req.method,
-    url: req.url,
-    sigPresent: Boolean(req.headers.get("stripe-signature")),
-    contentType: req.headers.get("content-type"),
-    timestamp: new Date().toISOString(),
-  });
-
   if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
-    console.error("[stripe/webhook] ❌ Variables d'env manquantes : STRIPE_SECRET_KEY ou STRIPE_WEBHOOK_SECRET");
+    console.error("[stripe/webhook] env missing: STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
     return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    console.error("[stripe/webhook] ❌ Variables d'env manquantes : SUPABASE_SERVICE_ROLE_KEY ou NEXT_PUBLIC_SUPABASE_URL. Vérifie que la variable s'appelle EXACTEMENT 'SUPABASE_SERVICE_ROLE_KEY' dans Vercel (pas SUPABASE_SERVICE_KEY ni SERVICE_ROLE_KEY).");
+    console.error("[stripe/webhook] env missing: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL");
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
-  // Confirme qu'on utilise bien la SERVICE ROLE (bypass RLS) et pas l'anon key par erreur.
-  // Une service_role key Supabase fait ~150+ chars et contient le claim "role":"service_role" en base64.
-  console.log("[stripe/webhook] Supabase client init avec SERVICE_ROLE (key length:", process.env.SUPABASE_SERVICE_ROLE_KEY.length, ")");
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -77,14 +66,13 @@ export async function POST(req: NextRequest) {
     const code = (idempError as { code?: string }).code;
     // 23505 = unique_violation → l'event a déjà été inséré (déjà traité)
     if (code === "23505") {
-      console.log("[stripe/webhook] event déjà traité (idempotency hit)", event.id);
       return NextResponse.json({ received: true, idempotent: true });
     }
-    // 42P01 = relation does not exist → la migration n'a pas été appliquée.
-    // On dégrade gracefully (pas d'idempotency mais on traite quand même)
-    // pour ne pas bloquer le tunnel commercial.
+    // 42P01 = relation does not exist → migration 002 manquante. Dégradation
+    // gracieuse (pas d'idempotency mais on traite quand même) pour ne pas
+    // bloquer le tunnel commercial.
     if (code === "42P01") {
-      console.warn("[stripe/webhook] table processed_events absente — idempotency désactivée. APPLIQUER LA MIGRATION 002.");
+      console.warn("[stripe/webhook] table processed_events absente — APPLIQUER LA MIGRATION 002");
     } else {
       console.error("[stripe/webhook] idempotency check failed:", idempError.message, "code:", code);
       return NextResponse.json({ error: idempError.message }, { status: 500 });
@@ -109,19 +97,8 @@ export async function POST(req: NextRequest) {
           ?? session.customer_details?.email
           ?? null;
 
-        // Log explicite pour vérifier le mapping user_id depuis Stripe
-        console.log("ID utilisateur reçu de Stripe:", session.client_reference_id);
-        console.log("[stripe/webhook] checkout.session.completed payload:", {
-          session_id: session.id,
-          client_reference_id: userId,
-          customer: customerId,
-          customer_email: customerEmail,
-          subscription: typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
-          payment_status: session.payment_status,
-        });
-
         if (!userId) {
-          console.warn("[stripe/webhook] ⚠️ checkout.session.completed sans client_reference_id. Le frontend a-t-il bien passé client_reference_id: user.id à stripe.checkout.sessions.create() ?", session.id);
+          console.warn("[stripe/webhook] checkout.session.completed without client_reference_id, session=", session.id);
           return NextResponse.json({ received: true });
         }
 
@@ -143,20 +120,11 @@ export async function POST(req: NextRequest) {
           .select("id, is_subscribed, stripe_customer_id");
 
         if (upsertError) {
-          console.error("[stripe/webhook] upsert profiles failed:", upsertError.message, "code:", (upsertError as { code?: string }).code);
+          console.error("[stripe/webhook] upsert profiles failed:", upsertError.message);
           throw upsertError;
         }
-
-        console.log("Statut mis à jour pour l'ID :", session.client_reference_id);
-
         if (!upserted || upserted.length === 0) {
-          console.error("[stripe/webhook] ⚠️ upsert n'a renvoyé aucune ligne. userId:", userId);
-        } else {
-          console.log("[stripe/webhook] ✅ subscription activated:", {
-            user_id: userId,
-            customer_id: customerId,
-            updated_rows: upserted.length,
-          });
+          console.error("[stripe/webhook] upsert returned 0 rows, userId=", userId);
         }
         break;
       }
@@ -167,7 +135,6 @@ export async function POST(req: NextRequest) {
         // Actif = trialing OU active ; tout le reste (past_due, canceled, incomplete, etc.) coupe l'accès
         const isActive = sub.status === "trialing" || sub.status === "active";
         await setSubscriptionByCustomer(customerId, isActive);
-        console.log(`[stripe/webhook] subscription.updated: customer=${customerId} status=${sub.status} → is_subscribed=${isActive}`);
         break;
       }
 
@@ -175,7 +142,6 @@ export async function POST(req: NextRequest) {
         const sub = event.data.object as Stripe.Subscription;
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
         await setSubscriptionByCustomer(customerId, false);
-        console.log(`[stripe/webhook] subscription.deleted: customer=${customerId}`);
         break;
       }
 
@@ -219,7 +185,6 @@ export async function POST(req: NextRequest) {
         }
 
         if (updated && updated.length > 0) {
-          console.log(`[stripe/webhook] ✅ invoice.paid: customer=${customerId} updated=${updated.length}`);
           break;
         }
 
@@ -244,7 +209,6 @@ export async function POST(req: NextRequest) {
                 console.error("[stripe/webhook] invoice.paid upsert via metadata err:", upsertErr.message);
                 throw upsertErr;
               }
-              console.log(`[stripe/webhook] ✅ invoice.paid (via metadata): user=${userIdFromMeta} customer=${customerId}`);
               break;
             }
           } catch (subErr) {
@@ -252,7 +216,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        console.warn(`[stripe/webhook] ⚠️ invoice.paid : customer=${customerId} → aucune ligne profiles trouvée. Le user a-t-il un profile en DB ?`);
+        console.warn(`[stripe/webhook] invoice.paid: no profile found for customer=${customerId}`);
         break;
       }
 
