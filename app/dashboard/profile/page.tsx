@@ -74,17 +74,31 @@ export default function ProfilePage() {
     setErrorMsg("");
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.replace("/"); return; }
+    const newName = restaurantName.trim() || null;
     const { error } = await supabase
       .from("profiles")
-      .update({ restaurant_name: restaurantName.trim() || null })
+      .update({ restaurant_name: newName })
       .eq("id", session.user.id);
-    setSavingName(false);
     if (error) {
+      setSavingName(false);
       setErrorMsg("Échec de la sauvegarde.");
       return;
     }
+
+    // Sync vers la table restaurants : sans ça, la timeline et le PDF
+    // continueraient d'afficher l'ancien nom (genre "Mon restaurant" auto-créé)
+    // alors que le chef vient de renommer en "Le Bistrot Lyonnais". Best-effort —
+    // si pas encore de ligne restaurants (premier scan pas encore fait), on skip.
+    if (newName) {
+      await supabase
+        .from("restaurants")
+        .update({ name: newName })
+        .eq("owner_id", session.user.id);
+    }
+
+    setSavingName(false);
     setNameSaved(true);
-    setProfile({ ...profile, restaurant_name: restaurantName.trim() || null });
+    setProfile({ ...profile, restaurant_name: newName });
     setTimeout(() => setNameSaved(false), 2500);
   };
 

@@ -308,13 +308,14 @@ function InvoiceCard({ inv, onClick, onDismiss }: {
 // items. Affiche les thumbnails + un CTA "Envoyer le lot (N)". Chaque
 // thumbnail a un bouton "x" pour retirer une photo.
 function StackTray({
-  items, onSend, onRemove, onClearAll, onAddMore, busy,
+  items, onSend, onRemove, onClearAll, onAddMore, onShowGuide, busy,
 }: {
   items: StackItem[];
   onSend: () => void;
   onRemove: (id: string) => void;
   onClearAll: () => void;
   onAddMore: () => void;
+  onShowGuide: () => void;
   busy: boolean;
 }) {
   // Génère les URLs de preview à chaque rendu et les nettoie avec une cleanup.
@@ -351,13 +352,23 @@ function StackTray({
               {items.length} {items.length > 1 ? "photos prêtes" : "photo prête"}
             </p>
           </div>
-          <button
-            onClick={onClearAll}
-            disabled={busy}
-            className="text-slate-400 hover:text-rose-500 text-xs font-medium disabled:opacity-30"
-          >
-            Tout supprimer
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onShowGuide}
+              disabled={busy}
+              className="text-slate-400 hover:text-blue-600 text-xs font-medium flex items-center gap-1 disabled:opacity-30"
+              title="Conseils de cadrage"
+            >
+              <HelpCircle size={12} /> Aide
+            </button>
+            <button
+              onClick={onClearAll}
+              disabled={busy}
+              className="text-slate-400 hover:text-rose-500 text-xs font-medium disabled:opacity-30"
+            >
+              Tout supprimer
+            </button>
+          </div>
         </div>
 
         {/* Thumbnails horizontales */}
@@ -667,15 +678,25 @@ function BatchOverlay({
 }
 
 // ─── Alert card ───────────────────────────────────────────
-function AlertCard({ alert }: { alert: Alert }) {
+function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const isHigh = Math.abs(alert.price_change_pct) >= 10;
   const priceDelta = alert.new_price - alert.old_price;
   const sign = priceDelta >= 0 ? "+" : "−";
 
   return (
-    <motion.div layout onClick={() => setExpanded(v => !v)} className={`card rounded-2xl p-4 cursor-pointer card-hover border-l-4 ${isHigh ? "border-red-400" : "border-blue-400"}`}>
-      <div className="flex items-start gap-3">
+    <motion.div layout onClick={() => setExpanded(v => !v)} className={`relative card rounded-2xl p-4 cursor-pointer card-hover border-l-4 ${isHigh ? "border-red-400" : "border-blue-400"}`}>
+      {onDismiss && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-50 hover:bg-rose-50 hover:text-rose-500 text-slate-400 flex items-center justify-center transition-colors"
+          aria-label="Marquer comme lue"
+          title="Marquer comme lue"
+        >
+          <X size={12} />
+        </button>
+      )}
+      <div className="flex items-start gap-3 pr-6">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isHigh ? "bg-red-50" : "bg-blue-50"}`}>
           <TrendingDown size={16} className={isHigh ? "text-red-500" : "text-blue-600"} />
         </div>
@@ -853,15 +874,26 @@ export default function DashboardPage() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  // Le bouton "Scanner" affiche d'abord un guide de cadrage (cf CameraGuide ci-dessous),
-  // puis sur confirmation déclenche la caméra native (capture="environment").
-  // `openGallery` ouvre le picker fichiers/galerie pour les anciennes factures.
-  const openCamera = () => setCameraGuideOpen(true);
+  // Le bouton "Scanner" affiche le guide de cadrage UNIQUEMENT à la 1ère utilisation.
+  // Aux fois suivantes, on déclenche directement la caméra native pour ne pas
+  // agacer le chef qui scanne 30 BL d'affilée. Un bouton "?" permet de réafficher
+  // le guide à la demande.
+  const CAMERA_GUIDE_SEEN_KEY = "yield_camera_guide_seen";
+  const openCamera = () => {
+    if (typeof window !== "undefined" && localStorage.getItem(CAMERA_GUIDE_SEEN_KEY) === "1") {
+      cameraInputRef.current?.click();
+      return;
+    }
+    setCameraGuideOpen(true);
+  };
   const launchNativeCamera = () => {
     setCameraGuideOpen(false);
+    if (typeof window !== "undefined") localStorage.setItem(CAMERA_GUIDE_SEEN_KEY, "1");
     cameraInputRef.current?.click();
   };
   const openGallery = () => galleryInputRef.current?.click();
+  // Réaffichage à la demande (bouton "?" dans le tray)
+  const showCameraGuide = () => setCameraGuideOpen(true);
 
   const callApi = async (path: string, init: RequestInit = {}) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -1133,6 +1165,30 @@ export default function DashboardPage() {
     void loadUsage();
     void loadInvoices();
     void loadAlerts();
+  };
+
+  // Marque une alerte (ou toutes) comme lue. UI optimiste, rollback si fail.
+  // RLS owner_margin_alerts WITH CHECK (migration 003) valide l'update.
+  const dismissAlert = async (alertId: string) => {
+    const previous = alerts;
+    setAlerts(prev => prev.filter(a => a.id !== alertId));
+    const { error } = await supabase
+      .from("margin_alerts")
+      .update({ is_read: true })
+      .eq("id", alertId);
+    if (error) setAlerts(previous);
+  };
+
+  const dismissAllAlerts = async () => {
+    if (alerts.length === 0) return;
+    const previous = alerts;
+    setAlerts([]);
+    const ids = previous.map(a => a.id);
+    const { error } = await supabase
+      .from("margin_alerts")
+      .update({ is_read: true })
+      .in("id", ids);
+    if (error) setAlerts(previous);
   };
 
   // Retire une facture en erreur ou doublon de la timeline.
@@ -1726,9 +1782,19 @@ export default function DashboardPage() {
                   </span>
                 )}
               </h2>
+              {alerts.length > 1 && (
+                <button
+                  onClick={dismissAllAlerts}
+                  className="text-slate-400 hover:text-blue-600 text-xs font-medium"
+                >
+                  Tout marquer comme lu
+                </button>
+              )}
             </div>
             <div className="space-y-3">
-              {alerts.map(alert => <AlertCard key={alert.id} alert={alert} />)}
+              {alerts.map(alert => (
+                <AlertCard key={alert.id} alert={alert} onDismiss={() => dismissAlert(alert.id)} />
+              ))}
             </div>
           </motion.div>
         )}
@@ -1865,6 +1931,7 @@ export default function DashboardPage() {
             onRemove={removeStackItem}
             onClearAll={clearStackAll}
             onAddMore={launchNativeCamera}
+            onShowGuide={showCameraGuide}
             busy={batchOpen && !batch.every(i => i.status === "done" || i.status === "error")}
           />
         )}
