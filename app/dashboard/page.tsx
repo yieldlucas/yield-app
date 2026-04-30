@@ -202,7 +202,11 @@ function VariationBadge({ pct }: { pct: number | null | undefined }) {
   );
 }
 
-function InvoiceCard({ inv, onClick }: { inv: RecentInvoice; onClick?: () => void }) {
+function InvoiceCard({ inv, onClick, onDismiss }: {
+  inv: RecentInvoice;
+  onClick?: () => void;
+  onDismiss?: () => void;
+}) {
   const isProcessing = inv.status === "processing" || inv.status === "pending";
   const isError = inv.status === "error";
   const isDuplicate = inv.status === "duplicate";
@@ -215,14 +219,25 @@ function InvoiceCard({ inv, onClick }: { inv: RecentInvoice; onClick?: () => voi
         ? "Calcul des marges..."
         : "Analyse en cours...";
 
-  return (
+  // Bouton X sur les cards qui n'apportent rien (error/duplicate) — permet
+  // au chef de nettoyer sa timeline sans passer par du SQL.
+  const dismissButton = onDismiss && (isError || isDuplicate) ? (
     <button
-      onClick={onClick}
-      disabled={!onClick || isProcessing}
-      className="w-full text-left rounded-xl bg-white shadow-sm border border-slate-100 hover:border-slate-200 hover:shadow transition-all p-4 disabled:cursor-default"
+      onClick={(e) => { e.stopPropagation(); onDismiss(); }}
+      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-slate-50 hover:bg-rose-50 hover:text-rose-500 text-slate-400 flex items-center justify-center transition-colors"
+      aria-label="Retirer cette facture"
+      title="Retirer cette facture"
     >
+      <X size={12} />
+    </button>
+  ) : null;
+
+  // Le content est extrait pour le réutiliser dans button OU div selon
+  // qu'on est cliquable ou pas (HTML interdit button-dans-button).
+  const content = (
+    <>
       <div className="flex items-start gap-3">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pr-6">
           <p className="text-slate-900 text-base font-bold truncate leading-tight">
             {inv.supplier_name || "Fournisseur inconnu"}
           </p>
@@ -266,7 +281,25 @@ function InvoiceCard({ inv, onClick }: { inv: RecentInvoice; onClick?: () => voi
           />
         </div>
       )}
-    </button>
+    </>
+  );
+
+  const baseClass = "relative w-full text-left rounded-xl bg-white shadow-sm border border-slate-100 p-4 transition-all";
+
+  if (onClick && !isProcessing) {
+    return (
+      <button onClick={onClick} className={`${baseClass} hover:border-slate-200 hover:shadow`}>
+        {dismissButton}
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div className={baseClass}>
+      {dismissButton}
+      {content}
+    </div>
   );
 }
 
@@ -1102,6 +1135,38 @@ export default function DashboardPage() {
     void loadAlerts();
   };
 
+  // Retire une facture en erreur ou doublon de la timeline.
+  // - DELETE supprime la ligne (cascade sur invoice_items, price_history, alerts)
+  // - Le fichier dans Storage est aussi supprimé pour libérer la place
+  // - UI optimiste : on retire de l'état local immédiatement, rollback si l'API échoue
+  const dismissInvoice = async (invoiceId: string) => {
+    const previous = invoices;
+    setInvoices(prev => prev.filter(i => i.id !== invoiceId));
+    try {
+      // Récupère image_path AVANT le delete (sinon RLS ne nous laisserait
+      // plus le voir une fois la ligne supprimée).
+      const { data: row } = await supabase
+        .from("invoices")
+        .select("image_path")
+        .eq("id", invoiceId)
+        .maybeSingle();
+      const imagePath = (row as { image_path?: string } | null)?.image_path;
+
+      const { error } = await supabase.from("invoices").delete().eq("id", invoiceId);
+      if (error) throw error;
+
+      if (imagePath) {
+        // Best-effort : si le storage delete échoue, le fichier reste orphelin
+        // mais c'est pas bloquant. Pas grave d'avoir 200 KB en trop.
+        await supabase.storage.from("invoices").remove([imagePath]).catch(() => {});
+      }
+    } catch (e) {
+      // Rollback UI en cas d'échec
+      setInvoices(previous);
+      console.error("[dismissInvoice]", e);
+    }
+  };
+
   // Auto-refresh des factures tant qu'au moins une est en processing.
   // Le useMemo + dep boolean stable évite de tear-down/rebuild l'interval
   // à chaque tick (vs déps `[invoices]` qui le recréait toutes les 3s).
@@ -1742,6 +1807,7 @@ export default function DashboardPage() {
                       key={inv.id}
                       inv={inv}
                       onClick={inv.status === "processed" ? () => router.push(`/dashboard/invoices/${inv.id}`) : undefined}
+                      onDismiss={() => dismissInvoice(inv.id)}
                     />
                   ))
                 )}
