@@ -90,16 +90,41 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ─── Restaurant ───
-  const { data: restaurant } = await supabase
+  // ─── Restaurant (lazy create au premier scan) ───
+  // Le signup crée auth.users + profiles via trigger handle_new_user, mais
+  // PAS de ligne restaurants. Plutôt qu'imposer un onboarding bloquant,
+  // on en crée une à la volée avec le nom déjà saisi en profil (si dispo)
+  // ou un placeholder que le chef pourra renommer.
+  let { data: restaurant } = await supabase
     .from("restaurants")
     .select("id")
     .eq("owner_id", user.id)
     .limit(1)
-    .single();
+    .maybeSingle();
 
   if (!restaurant) {
-    return NextResponse.json({ error: "Aucun restaurant trouvé" }, { status: 404 });
+    const { data: profileForName } = await supabase
+      .from("profiles")
+      .select("restaurant_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    const restaurantName = (profileForName as { restaurant_name?: string } | null)?.restaurant_name?.trim()
+      || "Mon restaurant";
+
+    const { data: created, error: createErr } = await supabase
+      .from("restaurants")
+      .insert({ owner_id: user.id, name: restaurantName })
+      .select("id")
+      .single();
+
+    if (createErr || !created) {
+      console.error("[invoices/process] auto-create restaurant failed", createErr?.message);
+      return NextResponse.json(
+        { error: "Impossible de créer votre restaurant. Réessayez ou contactez le support." },
+        { status: 500 },
+      );
+    }
+    restaurant = created;
   }
 
   // ─── Quota mensuel ───
