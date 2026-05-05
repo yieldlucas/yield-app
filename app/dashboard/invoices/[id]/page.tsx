@@ -9,6 +9,7 @@ import {
   ChevronDown, RotateCcw, Save,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { openSignedExport } from "@/lib/export-download";
 
 // Aligné avec dashboard/page.tsx — code couleur strict variation
 const VARIATION_ALERT_PCT = 7;
@@ -235,17 +236,25 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // ── Export ───
+  // Le navigateur ne peut pas attacher un Authorization header sur un download
+  // direct → on utilise un proxy court-terme : openSignedExport demande à
+  // /api/exports/sign un token HMAC scopé sur l'invoiceId (5 min) et ouvre
+  // l'URL `?t=<token>`. Plus de JWT long-terme dans la query string.
   const exportPdf = async () => {
     setActionsOpen(false);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { router.replace("/"); return; }
-    window.open(`/api/invoices/${invoiceId}/export-pdf?t=${encodeURIComponent(session.access_token)}`, "_blank");
+    try {
+      await openSignedExport(`/api/invoices/${invoiceId}/export-pdf`, invoiceId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'export PDF");
+    }
   };
   const exportCsv = async () => {
     setActionsOpen(false);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { router.replace("/"); return; }
-    window.open(`/api/invoices/${invoiceId}/export-csv?t=${encodeURIComponent(session.access_token)}`, "_blank");
+    try {
+      await openSignedExport(`/api/invoices/${invoiceId}/export-csv`, invoiceId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de l'export CSV");
+    }
   };
 
   // ── States UI ───

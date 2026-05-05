@@ -4,6 +4,13 @@
 
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 
+/** Limite des libellés PDF — au-delà, le texte est tronqué avec "…" pour ne pas
+ *  casser le layout en colonnes (un libellé fournisseur de 200 chars passait
+ *  par-dessus le bloc meta à droite). Choix : 60 pour le supplier (titre), 80
+ *  pour les lignes produit (cellule + serrée). */
+const SUPPLIER_NAME_MAX = 60;
+const ITEM_LABEL_MAX = 80;
+
 export type InvoicePdfData = {
   supplierName: string;
   invoiceNumber: string | null;
@@ -16,8 +23,10 @@ export type InvoicePdfData = {
     label: string;
     quantity: number;
     unit: string | null;
-    unitPriceHt: number;
-    totalPriceHt: number;
+    /** null si la donnée est absente en DB (facture en erreur, ligne incomplète).
+     *  Affiché en "0,00 EUR*" + footnote, jamais NaN. */
+    unitPriceHt: number | null;
+    totalPriceHt: number | null;
     vatRate: number | null;
     previousPrice: number | null;
     corrected: boolean;
@@ -53,9 +62,21 @@ const styles = StyleSheet.create({
   itemLabel: { fontSize: 10, fontWeight: "bold" },
   itemPrev: { fontSize: 7, color: "#94a3b8", marginTop: 1 },
   corrected: { fontSize: 7, color: "#10b981", marginTop: 1 },
+  /** Indicateur discret pour un prix manquant — l'astérisque renvoie au footer. */
+  priceMissing: { color: "#94a3b8" },
+
+  // Footnote sous la table, visible uniquement si au moins un prix est null.
+  missingNote: { fontSize: 7, color: "#94a3b8", marginTop: 6, fontStyle: "italic" },
 
   footer: { position: "absolute", bottom: 30, left: 40, right: 40, fontSize: 7, color: "#94a3b8", textAlign: "center", borderTop: "0.5pt solid #e2e8f0", paddingTop: 8 },
 });
+
+/** Tronque proprement avec "…" en respectant la limite (ellipsis incluse). */
+function truncate(s: string | null | undefined, n: number): string {
+  const v = (s ?? "").trim();
+  if (v.length <= n) return v;
+  return `${v.slice(0, n - 1).trimEnd()}…`;
+}
 
 const fmt = (n: number) =>
   n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " EUR";
@@ -73,7 +94,18 @@ const variationBg = (pct: number | null) => {
   return "#f1f5f9";
 };
 
+/**
+ * Rend un PDF une page A4 d'une facture analysée.
+ * Tolère des prix nuls (affiche "0,00 EUR*" + footnote) et tronque les libellés
+ * trop longs pour ne pas casser le layout. Les rows utilisent `wrap={false}`
+ * pour garder une ligne par produit (split en bas de page = 2e page propre).
+ */
 export function InvoicePdf({ data }: { data: InvoicePdfData }) {
+  const supplierLabel = truncate(data.supplierName, SUPPLIER_NAME_MAX) || "Fournisseur inconnu";
+  const hasMissingPrice = data.items.some(
+    (it) => it.unitPriceHt == null || it.totalPriceHt == null,
+  );
+
   return (
     <Document>
       <Page size="A4" style={styles.page}>
@@ -91,16 +123,16 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
             {data.restaurantName ? (
               <>
                 <Text style={[styles.metaLabel, { marginTop: 6 }]}>Restaurant</Text>
-                <Text style={styles.metaValue}>{data.restaurantName}</Text>
+                <Text style={styles.metaValue}>{truncate(data.restaurantName, 40)}</Text>
               </>
             ) : null}
           </View>
         </View>
 
         {/* Fournisseur + meta facture */}
-        <Text style={styles.supplierTitle}>{data.supplierName || "Fournisseur inconnu"}</Text>
+        <Text style={styles.supplierTitle}>{supplierLabel}</Text>
         <Text style={styles.supplierMeta}>
-          {data.invoiceNumber ? `BL n° ${data.invoiceNumber}  ·  ` : ""}
+          {data.invoiceNumber ? `BL n° ${truncate(data.invoiceNumber, 40)}  ·  ` : ""}
           {data.invoiceDate
             ? new Date(data.invoiceDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })
             : "Date non renseignée"}
@@ -133,13 +165,17 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
 
         {/* Rows */}
         {data.items.map((it, i) => {
-          const variationPct = it.previousPrice && it.previousPrice > 0
-            ? ((it.unitPriceHt - it.previousPrice) / it.previousPrice) * 100
+          const unitPrice = it.unitPriceHt;
+          const totalPrice = it.totalPriceHt;
+          const variationPct = it.previousPrice && it.previousPrice > 0 && unitPrice != null
+            ? ((unitPrice - it.previousPrice) / it.previousPrice) * 100
             : null;
+          const unitMissing = unitPrice == null;
+          const totalMissing = totalPrice == null;
           return (
             <View key={i} style={styles.tableRow} wrap={false}>
               <View style={styles.cellLabel}>
-                <Text style={styles.itemLabel}>{it.label}</Text>
+                <Text style={styles.itemLabel}>{truncate(it.label, ITEM_LABEL_MAX)}</Text>
                 {it.previousPrice != null ? (
                   <Text style={styles.itemPrev}>Prix précédent : {fmt(it.previousPrice)}</Text>
                 ) : null}
@@ -148,14 +184,24 @@ export function InvoicePdf({ data }: { data: InvoicePdfData }) {
               <Text style={styles.cellQty}>
                 {it.quantity.toLocaleString("fr-FR", { maximumFractionDigits: 3 })}{it.unit ? ` ${it.unit}` : ""}
               </Text>
-              <Text style={styles.cellPrice}>{fmt(it.unitPriceHt)}</Text>
-              <Text style={styles.cellTotal}>{fmt(it.totalPriceHt)}</Text>
+              <Text style={unitMissing ? [styles.cellPrice, styles.priceMissing] : styles.cellPrice}>
+                {fmt(unitPrice ?? 0)}{unitMissing ? "*" : ""}
+              </Text>
+              <Text style={totalMissing ? [styles.cellTotal, styles.priceMissing] : styles.cellTotal}>
+                {fmt(totalPrice ?? 0)}{totalMissing ? "*" : ""}
+              </Text>
               <Text style={[styles.cellVar, { color: variationColor(variationPct), fontWeight: "bold" }]}>
                 {variationPct == null ? "—" : `${variationPct > 0 ? "+" : ""}${variationPct.toFixed(1)}%`}
               </Text>
             </View>
           );
         })}
+
+        {hasMissingPrice ? (
+          <Text style={styles.missingNote}>
+            * Prix non renseigné dans la facture extraite — valeur affichée à 0,00 EUR. Corrigez la ligne depuis le détail facture pour fiabiliser vos marges.
+          </Text>
+        ) : null}
 
         <Text style={styles.footer} fixed>
           Document généré par Yield · yieldapp.fr · Données conservées sur serveurs européens (Supabase EU-Stockholm)

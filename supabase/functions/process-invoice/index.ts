@@ -140,6 +140,25 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
+/**
+ * Libère le slot de quota réservé en amont (`/api/invoices/process` a appelé
+ * `check_and_increment_scan_usage` AVANT de fire l'edge function).
+ *
+ * Appelée quand le scan ne produit pas de valeur pour le user :
+ *   - status='error' (parsing Claude raté, crash mid-pipeline)
+ *   - status='duplicate' (BL déjà importé)
+ *
+ * Best-effort : si l'appel échoue, on log mais on ne propage pas — laisser le
+ * compteur à +1 vaut mieux que faire crasher la response handler.
+ */
+async function releaseQuotaSlot(sb: SupabaseClient, restaurantId: string): Promise<void> {
+  try {
+    await sb.rpc("decrement_scan_usage", { p_restaurant_id: restaurantId });
+  } catch (e) {
+    console.error("[process-invoice] decrement_scan_usage failed:", e);
+  }
+}
+
 async function upsertSupplier(
   sb: SupabaseClient,
   restaurantId: string,
@@ -398,6 +417,10 @@ async function processInvoice(
 
   // ─── Phase FINAL ───
   // status='processed' est la source de vérité pour le client (arrête le polling).
+  // Le slot de quota a été réservé EN AMONT par /api/invoices/process via
+  // check_and_increment_scan_usage (migration 009). Ici on ne touche plus au
+  // compteur — on le laisse "committed". En cas d'échec (status='error' ou
+  // 'duplicate'), c'est releaseQuotaSlot qui est appelée pour rendre le crédit.
   await sb.from("invoices").update({
     status: "processed",
     processing_step: "processed",
@@ -405,29 +428,19 @@ async function processInvoice(
     variation_pct: variationPct,
   }).eq("id", invoiceId);
 
-  // Incrément quota mensuel (atomic, via fonction SQL).
-  // On le fait en fin de pipeline pour ne compter QUE les scans réussis :
-  // un duplicate (qui throw plus haut) ou une erreur Claude n'est pas facturé.
-  let scansUsed: number | null = null;
-  try {
-    const { data } = await sb.rpc("increment_scan_usage", { p_restaurant_id: restaurantId });
-    scansUsed = typeof data === "number" ? data : null;
-  } catch (err) {
-    console.error("[process-invoice] increment_scan_usage failed:", err);
-  }
-
-  return { invoice_id: invoiceId, extracted, items_matched: itemsMatched, items_created: itemsCreated, alerts, scans_used: scansUsed };
+  return { invoice_id: invoiceId, extracted, items_matched: itemsMatched, items_created: itemsCreated, alerts };
 }
 
 // ─── Entry point ──────────────────────────────────────────
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
 
-  // Capturés hors try pour pouvoir marquer la facture en 'error' dans le
-  // catch global (sinon une crash mid-pipeline laisserait status='processing'
-  // à vie → polling client tournerait jusqu'au timeout 90s sans message clair).
+  // Capturés hors try pour pouvoir marquer la facture en 'error' ET libérer
+  // le slot de quota dans le catch global (sinon une crash mid-pipeline
+  // laisserait status='processing' à vie + un crédit perdu pour l'user).
   let invoice_id: string | null = null;
   let sb: SupabaseClient | null = null;
+  let restaurant_id: string | null = null;
 
   try {
     const body = await req.json();
@@ -462,6 +475,7 @@ serve(async (req: Request) => {
     if (invErr || !invoice) return json({ error: "Facture introuvable" }, 404);
     if (invoice.restaurant.owner_id !== user.id) return json({ error: "Accès refusé" }, 403);
     if (invoice.status === "processed") return json({ error: "Déjà traitée" }, 409);
+    restaurant_id = invoice.restaurant.id;
 
     // Passe en "processing" + sous-état "extracting" (Claude lit l'image).
     // Le client poll invoices.processing_step pour afficher des messages
@@ -478,6 +492,7 @@ serve(async (req: Request) => {
 
     if (dlErr || !imageBlob) {
       await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+      if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: "Image introuvable dans Storage" }, 404);
     }
 
@@ -524,6 +539,7 @@ serve(async (req: Request) => {
       extracted = parseClaudeResponse(rawText);
     } catch (err) {
       await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+      if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: "Échec parsing Claude", details: String(err) }, 422);
     }
 
@@ -535,8 +551,10 @@ serve(async (req: Request) => {
       if (err instanceof DuplicateInvoiceError) {
         // Nettoyage : on supprime le fichier uploadé en double pour ne pas
         // gonfler le storage (la ligne invoices reste, marquée 'duplicate',
-        // pour traçabilité et debug si besoin).
+        // pour traçabilité et debug si besoin). Et on libère le slot de
+        // quota — un duplicate ne doit pas consommer un crédit.
         await sb.storage.from("invoices").remove([invoice.image_path]).catch(() => {});
+        if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
         return json({
           error: "Cette facture a déjà été enregistrée.",
           code: "DUPLICATE_INVOICE",
@@ -550,9 +568,11 @@ serve(async (req: Request) => {
 
   } catch (err) {
     console.error("[process-invoice] Fatal:", err);
-    // Garantit qu'aucune facture ne reste bloquée en 'processing' après un crash :
-    // on essaye de marquer 'error', mais on ne re-throw pas si ça échoue (le 500
-    // reste la bonne réponse à renvoyer au caller).
+    // Garantit qu'aucune facture ne reste bloquée en 'processing' après un crash.
+    // En revanche on NE libère PAS le slot de quota ici : c'est le caller
+    // (/api/invoices/process via after()) qui le fera en voyant le 5xx, pour
+    // éviter un double-release. Les erreurs "métier" (parsing/duplicate/image
+    // missing) sont gérées plus haut dans la chaîne, là on libère localement.
     if (invoice_id && sb) {
       try {
         await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);

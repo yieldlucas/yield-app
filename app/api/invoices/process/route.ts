@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse, after } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { authorizeBearer } from "@/lib/api-auth";
+import { getServiceClient } from "@/lib/supabase-admin";
+import {
+  apiErrorResponse,
+  badRequest,
+  internal,
+  paymentRequired,
+} from "@/lib/api-error";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 // Vercel max duration : Pro = 60s, Hobby = 10s. Le scan IA peut prendre 15-25s
@@ -9,251 +17,234 @@ export const maxDuration = 60;
 // Quota mensuel inclus dans l'offre lancement (19.99€). Au-delà : prompt
 // d'upgrade vers Pro 39.99€ (quota plus élevé). Voir migration 005.
 const MONTHLY_SCAN_QUOTA = 200;
+const TRIAL_DAYS = 14;
 
-// Pipeline :
-// 1. Auth via Bearer token (cohérent avec le reste de l'API, client en localStorage)
-// 2. Récupère le restaurant lié au user
-// 3. Upload du fichier dans Storage
-// 4. Insert facture (status: pending)
-// 5. Délègue à la Supabase Edge Function (Claude Vision + comparaison prix)
-
+/**
+ * Pipeline d'ingestion d'une facture :
+ *  1. Auth Bearer (cohérent avec le reste de l'API)
+ *  2. Gate abonnement : trial 14j OU is_subscribed
+ *  3. Restaurant lazy-create
+ *  4. Réservation atomique du quota mensuel (RPC check_and_increment)
+ *  5. Upload Storage + insert facture (status: pending)
+ *  6. Délègue à la Supabase Edge Function en fire-and-forget
+ *
+ * Compensation : si le pipeline échoue après l'étape 4, on appelle
+ * `decrement_scan_usage` pour rendre le crédit au user (le scan n'a pas
+ * abouti). Voir migration 009.
+ */
 export async function POST(request: NextRequest) {
-  // ─── Auth Bearer (compatible avec le client localStorage) ───
-  const authHeader = request.headers.get("authorization");
-  const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  if (!accessToken) {
-    return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
-  }
+  try {
+    const { userId, email, supabase, accessToken } = await authorizeBearer(request);
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: { headers: { Authorization: `Bearer ${accessToken}` } },
-      auth: { persistSession: false, autoRefreshToken: false },
-    }
-  );
-
-  const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-  if (authError || !user) {
-    return NextResponse.json({ error: "Session expirée" }, { status: 401 });
-  }
-
-  // ─── Gate abonnement : essai gratuit 14 jours OU is_subscribed = true ───
-  // Source de vérité = profiles.is_subscribed (mis à jour par webhook Stripe)
-  // + profiles.created_at pour l'ancienneté de l'inscription
-  const TRIAL_DAYS = 14;
-  const { data: profileRow } = await supabase
-    .from("profiles")
-    .select("is_subscribed, created_at")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const profile = profileRow as { is_subscribed?: boolean; created_at?: string } | null;
-  const isSubscribed = Boolean(profile?.is_subscribed);
-  const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
-  const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
-  let trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
-
-  // Anti-fraude : un user qui se ré-inscrit avec un alias email (foo+1@gmail)
-  // ou en variant la casse n'a pas droit à un nouveau trial. On compare par
-  // normalized_email (calculé par trigger en DB, voir migration 004).
-  if (trialActive && createdAt && user.email && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    const adminClient = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      { auth: { persistSession: false, autoRefreshToken: false } }
-    );
-    const normalized = user.email
-      .toLowerCase()
-      .replace(/\+[^@]*@/, "@");
-    const { data: olderTwin } = await adminClient
+    // ─── Gate abonnement : essai gratuit 14 jours OU is_subscribed = true ───
+    const { data: profileRow } = await supabase
       .from("profiles")
+      .select("is_subscribed, created_at")
+      .eq("id", userId)
+      .maybeSingle();
+
+    const profile = profileRow as { is_subscribed?: boolean; created_at?: string } | null;
+    const isSubscribed = Boolean(profile?.is_subscribed);
+    const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
+    const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    let trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
+
+    // Anti-fraude trial : un user qui se ré-inscrit avec un alias email
+    // (foo+1@gmail) ou en variant la casse n'a pas droit à un nouveau trial.
+    // Comparé via normalized_email (calculé par trigger DB, migration 004).
+    if (trialActive && createdAt && email && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const adminClient = getServiceClient();
+      const normalized = email.toLowerCase().replace(/\+[^@]*@/, "@");
+      const { data: olderTwin } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("normalized_email", normalized)
+        .neq("id", userId)
+        .lt("created_at", createdAt.toISOString())
+        .limit(1)
+        .maybeSingle();
+      if (olderTwin) trialActive = false;
+    }
+
+    if (!isSubscribed && !trialActive) {
+      throw paymentRequired(
+        "Votre essai gratuit de 14 jours est terminé. Abonnez-vous pour continuer à scanner.",
+        "SUBSCRIPTION_REQUIRED",
+      );
+    }
+
+    // ─── Restaurant (lazy create au premier scan) ───
+    let { data: restaurant } = await supabase
+      .from("restaurants")
       .select("id")
-      .eq("normalized_email", normalized)
-      .neq("id", user.id)
-      .lt("created_at", createdAt.toISOString())
+      .eq("owner_id", userId)
       .limit(1)
       .maybeSingle();
-    if (olderTwin) {
-      trialActive = false;
+
+    if (!restaurant) {
+      const { data: profileForName } = await supabase
+        .from("profiles")
+        .select("restaurant_name")
+        .eq("id", userId)
+        .maybeSingle();
+      const restaurantName =
+        (profileForName as { restaurant_name?: string } | null)?.restaurant_name?.trim() ||
+        "Mon restaurant";
+
+      const { data: created, error: createErr } = await supabase
+        .from("restaurants")
+        .insert({ owner_id: userId, name: restaurantName })
+        .select("id")
+        .single();
+
+      if (createErr || !created) {
+        throw internal("Impossible de créer votre restaurant. Réessayez ou contactez le support.", createErr);
+      }
+      restaurant = created;
     }
-  }
+    const restaurantId = restaurant.id;
 
-  if (!isSubscribed && !trialActive) {
-    return NextResponse.json(
-      {
-        error: "Votre essai gratuit de 14 jours est terminé. Abonnez-vous pour continuer à scanner.",
-        code: "SUBSCRIPTION_REQUIRED",
-      },
-      { status: 402 }
-    );
-  }
-
-  // ─── Restaurant (lazy create au premier scan) ───
-  // Le signup crée auth.users + profiles via trigger handle_new_user, mais
-  // PAS de ligne restaurants. Plutôt qu'imposer un onboarding bloquant,
-  // on en crée une à la volée avec le nom déjà saisi en profil (si dispo)
-  // ou un placeholder que le chef pourra renommer.
-  let { data: restaurant } = await supabase
-    .from("restaurants")
-    .select("id")
-    .eq("owner_id", user.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (!restaurant) {
-    const { data: profileForName } = await supabase
-      .from("profiles")
-      .select("restaurant_name")
-      .eq("id", user.id)
-      .maybeSingle();
-    const restaurantName = (profileForName as { restaurant_name?: string } | null)?.restaurant_name?.trim()
-      || "Mon restaurant";
-
-    const { data: created, error: createErr } = await supabase
-      .from("restaurants")
-      .insert({ owner_id: user.id, name: restaurantName })
-      .select("id")
+    // ─── Réservation atomique du quota mensuel (migration 009) ───
+    // check_and_increment_scan_usage fait check + reserve dans une seule
+    // transaction avec FOR UPDATE → plus de race condition entre 2 requêtes
+    // simultanées qui passeraient toutes deux la vérification avant que
+    // l'incrément ne soit appliqué.
+    //
+    // Si le scan échoue après ce point, on appelle decrement_scan_usage
+    // (compensation) pour rendre le crédit au user.
+    const { data: quotaRow, error: quotaErr } = await supabase
+      .rpc("check_and_increment_scan_usage", {
+        p_restaurant_id: restaurantId,
+        p_quota: MONTHLY_SCAN_QUOTA,
+      })
       .single();
 
-    if (createErr || !created) {
-      console.error("[invoices/process] auto-create restaurant failed", createErr?.message);
-      return NextResponse.json(
-        { error: "Impossible de créer votre restaurant. Réessayez ou contactez le support." },
-        { status: 500 },
+    if (quotaErr) throw internal("Erreur lors de la vérification du quota", quotaErr);
+
+    const quota = quotaRow as { allowed: boolean; used: number; quota: number };
+    if (!quota.allowed) {
+      throw paymentRequired(
+        `Vous avez utilisé l'intégralité de votre forfait mensuel (${quota.quota} scans). Pour continuer à scanner ce mois-ci et débloquer les fonctions Business Intelligence, passez au forfait Pro à 39,99€/mois.`,
+        "QUOTA_EXCEEDED",
+        { quota: quota.quota, used: quota.used },
       );
     }
-    restaurant = created;
-  }
 
-  // ─── Quota mensuel ───
-  // On bloque AVANT l'upload + IA pour ne pas brûler du token Claude inutilement.
-  // Le compteur est incrémenté côté edge function uniquement sur scan réussi.
-  const yearMonth = new Date().toISOString().slice(0, 7); // 'YYYY-MM' UTC
-  const { data: usage } = await supabase
-    .from("usage_stats")
-    .select("scan_count")
-    .eq("restaurant_id", restaurant.id)
-    .eq("year_month", yearMonth)
-    .maybeSingle();
-
-  const scansUsed = (usage as { scan_count?: number } | null)?.scan_count ?? 0;
-  if (scansUsed >= MONTHLY_SCAN_QUOTA) {
-    return NextResponse.json(
-      {
-        error: `Vous avez utilisé l'intégralité de votre forfait mensuel (${MONTHLY_SCAN_QUOTA} scans). Pour continuer à scanner ce mois-ci et débloquer les fonctions Business Intelligence, passez au forfait Pro à 39,99€/mois.`,
-        code: "QUOTA_EXCEEDED",
-        quota: MONTHLY_SCAN_QUOTA,
-        used: scansUsed,
-      },
-      { status: 402 }
-    );
-  }
-
-  // ─── Validation fichier ───
-  const formData = await request.formData();
-  const file = formData.get("invoice") as File | null;
-
-  if (!file) {
-    return NextResponse.json({ error: "Fichier manquant" }, { status: 400 });
-  }
-
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
-  if (!allowedTypes.includes(file.type)) {
-    return NextResponse.json(
-      { error: "Format non supporté. Utilisez JPEG, PNG, WebP ou PDF." },
-      { status: 400 }
-    );
-  }
-
-  if (file.size > 20 * 1024 * 1024) {
-    return NextResponse.json(
-      { error: "Fichier trop volumineux (max 20 Mo)." },
-      { status: 400 }
-    );
-  }
-
-  // ─── Upload Storage ───
-  const safeFilename = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const storagePath = `${restaurant.id}/${Date.now()}-${safeFilename}`;
-
-  const { error: uploadError } = await supabase.storage
-    .from("invoices")
-    .upload(storagePath, file, { contentType: file.type });
-
-  if (uploadError) {
-    return NextResponse.json(
-      { error: "Erreur lors de l'upload de l'image" },
-      { status: 500 }
-    );
-  }
-
-  // ─── Insert facture (status: pending) ───
-  const { data: invoice, error: invoiceError } = await supabase
-    .from("invoices")
-    .insert({
-      restaurant_id: restaurant.id,
-      image_path: storagePath,
-      status: "pending",
-    })
-    .select("id")
-    .single();
-
-  if (invoiceError || !invoice) {
-    return NextResponse.json({ error: "Erreur création facture" }, { status: 500 });
-  }
-
-  // ─── Délègue à la Supabase Edge Function en fire-and-forget ───
-  // Avant on awaitait la réponse complète (15-40s) → bloquait le client +
-  // risque de timeout Vercel à 60s. Maintenant on retourne invoice_id
-  // immédiatement, l'edge function tourne en background, et le client poll
-  // invoices.processing_step pour suivre l'avancement.
-  // `after()` (Next 15) garantit que le fetch est envoyé même après le return.
-  const edgeFunctionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-invoice`;
-
-  // Helper local : marque la facture en 'error' via service-role, en silence
-  // si jamais la clé manque ou que l'update lui-même échoue. Le but c'est de
-  // débloquer le polling client, pas de propager une nouvelle erreur.
-  const markInvoiceFailed = async (id: string) => {
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
-    try {
-      const adminClient = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
-        { auth: { persistSession: false, autoRefreshToken: false } }
-      );
-      await adminClient.from("invoices").update({ status: "error" }).eq("id", id);
-    } catch (e) {
-      console.error("[invoices/process] markInvoiceFailed threw", e);
-    }
-  };
-
-  after(async () => {
-    try {
-      const res = await fetch(edgeFunctionUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-          "apikey": process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        },
-        body: JSON.stringify({ invoice_id: invoice.id }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        console.error("[invoices/process] edge function failed", res.status, body);
-        await markInvoiceFailed(invoice.id);
+    // À partir d'ici, le quota est RÉSERVÉ. Toute sortie en erreur doit
+    // appeler releaseQuotaSlot() pour ne pas brûler le crédit du user.
+    let quotaCommitted = false;
+    const releaseQuotaSlot = async () => {
+      if (quotaCommitted) return;
+      try {
+        const admin = getServiceClient();
+        await admin.rpc("decrement_scan_usage", { p_restaurant_id: restaurantId });
+      } catch (e) {
+        logger.error("invoices/process", "decrement_scan_usage failed", { error: e });
       }
-      // 200 OK : l'edge function a aussi marqué status='processed' ou 'duplicate'
-      // ou 'error' selon le cas (cf catch global edge function), rien à faire ici.
-    } catch (err) {
-      console.error("[invoices/process] edge function fetch threw", err);
-      // Réseau / DNS / timeout : l'edge function n'a peut-être jamais tourné,
-      // donc personne d'autre ne va marquer la facture en erreur. À nous de le faire.
-      await markInvoiceFailed(invoice.id);
-    }
-  });
+    };
 
-  return NextResponse.json({ invoice_id: invoice.id, status: "pending" }, { status: 202 });
+    try {
+      // ─── Validation fichier ───
+      const formData = await request.formData();
+      const file = formData.get("invoice") as File | null;
+      if (!file) throw badRequest("Fichier manquant");
+
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+      if (!allowedTypes.includes(file.type)) {
+        throw badRequest("Format non supporté. Utilisez JPEG, PNG, WebP ou PDF.");
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        throw badRequest("Fichier trop volumineux (max 20 Mo).");
+      }
+
+      // ─── Upload Storage ───
+      const safeFilename = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      const storagePath = `${restaurantId}/${Date.now()}-${safeFilename}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("invoices")
+        .upload(storagePath, file, { contentType: file.type });
+
+      if (uploadError) throw internal("Erreur lors de l'upload de l'image", uploadError);
+
+      // ─── Insert facture (status: pending) ───
+      const { data: invoice, error: invoiceError } = await supabase
+        .from("invoices")
+        .insert({
+          restaurant_id: restaurantId,
+          image_path: storagePath,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      if (invoiceError || !invoice) {
+        throw internal("Erreur lors de la création de la facture", invoiceError);
+      }
+
+      // ─── Délègue à la Supabase Edge Function en fire-and-forget ───
+      // `after()` (Next 15) garantit que le fetch est envoyé même après le return.
+      // Si le fetch échoue côté réseau, on marque la facture en erreur ET on
+      // libère le slot de quota — dans le cas heureux, l'edge function ira
+      // jusqu'au bout et ne touchera pas au quota (il est déjà réservé ici).
+      const edgeFunctionUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/process-invoice`;
+
+      const markInvoiceFailedAndRelease = async (id: string) => {
+        if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return;
+        try {
+          const adminClient = getServiceClient();
+          await adminClient.from("invoices").update({ status: "error" }).eq("id", id);
+        } catch (e) {
+          logger.error("invoices/process", "markInvoiceFailed (status update) threw", { error: e });
+        }
+        await releaseQuotaSlot();
+      };
+
+      after(async () => {
+        try {
+          const res = await fetch(edgeFunctionUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+              apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            },
+            body: JSON.stringify({ invoice_id: invoice.id }),
+          });
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            logger.error("invoices/process", "edge function failed", {
+              status: res.status,
+              body,
+            });
+            // L'edge function gère elle-même son propre release sur status='error'
+            // ou 'duplicate'. On ne double-release pas.
+            if (res.status >= 500) {
+              await markInvoiceFailedAndRelease(invoice.id);
+            }
+          }
+        } catch (err) {
+          logger.error("invoices/process", "edge function fetch threw", { error: err });
+          // Réseau / DNS / timeout : l'edge function n'a peut-être jamais tourné,
+          // donc personne d'autre ne va marquer la facture en erreur ni libérer
+          // le crédit. À nous de le faire.
+          await markInvoiceFailedAndRelease(invoice.id);
+        }
+      });
+
+      // Le slot de quota est "committed" tant que le scan se déroule normalement.
+      // L'edge function le libère elle-même si le scan échoue (status='error' ou
+      // 'duplicate'). Voir process-invoice/index.ts.
+      quotaCommitted = true;
+
+      return NextResponse.json({ invoice_id: invoice.id, status: "pending" }, { status: 202 });
+    } catch (innerErr) {
+      // Toute erreur entre la réservation et le fire de l'edge function →
+      // libération immédiate du slot.
+      await releaseQuotaSlot();
+      throw innerErr;
+    }
+  } catch (err) {
+    return apiErrorResponse(err, "invoices/process");
+  }
 }

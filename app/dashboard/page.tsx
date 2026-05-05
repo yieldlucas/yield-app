@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { addToStack, listStack, removeFromStack, clearStack, type StackItem } from "@/lib/scan-stack";
+import { openSignedExport } from "@/lib/export-download";
 
 interface Alert {
   id: string;
@@ -956,11 +957,13 @@ export default function DashboardPage() {
   const exportCSV = async () => {
     setExportLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) { router.replace("/"); return; }
-      // Download via GET avec token en query param (les navigateurs ne préservent pas les headers sur download direct)
-      const url = `/api/export/csv?t=${encodeURIComponent(session.access_token)}`;
-      window.open(url, "_blank");
+      // openSignedExport : POST /api/exports/sign (Bearer JWT), récupère un
+      // token HMAC court (5 min, scopé null = export global), puis ouvre
+      // l'URL avec ?t=<token>. Plus de JWT long-terme dans la query string.
+      await openSignedExport("/api/export/csv", null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Échec de l'export";
+      setBillingError(msg);
     } finally {
       setTimeout(() => setExportLoading(false), 800);
     }
