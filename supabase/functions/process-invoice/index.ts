@@ -179,6 +179,96 @@ async function releaseQuotaSlot(sb: SupabaseClient, restaurantId: string): Promi
   }
 }
 
+/**
+ * Marque une facture en erreur ET stocke le message user-facing dans
+ * `invoices.error_message` pour que le polling client le propage au chef.
+ * Best-effort : si l'update échoue, on log mais on ne propage pas (la
+ * réponse HTTP courante reste autoritaire).
+ */
+async function markInvoiceError(
+  sb: SupabaseClient,
+  id: string,
+  message: string,
+): Promise<void> {
+  try {
+    await sb.from("invoices").update({
+      status: "error",
+      error_message: message,
+    }).eq("id", id);
+  } catch (e) {
+    console.error("[process-invoice] markInvoiceError failed:", e);
+  }
+}
+
+type FileKind = { kind: "pdf" | "image"; mediaType: string };
+
+/**
+ * Détecte le type de fichier de manière robuste, dans l'ordre de fiabilité :
+ *   1. content_type fourni par le navigateur lors de l'upload (file.type)
+ *   2. Magic-byte detection (premiers octets du blob — résiste à un
+ *      Content-Type vide ou tordu)
+ *   3. Extension du filename (dernier recours)
+ *
+ * Pour les PDFs Google Docs / exports navigateur, le content_type peut être
+ * absent ou erroné — la magic-byte detection garantit la bonne classification.
+ */
+function detectFileKind(
+  contentType: string | null,
+  bytes: Uint8Array,
+  imagePath: string,
+): FileKind {
+  // 1. content_type (le plus fiable quand le navigateur l'envoie)
+  switch (contentType) {
+    case "application/pdf": return { kind: "pdf", mediaType: "application/pdf" };
+    case "image/png":       return { kind: "image", mediaType: "image/png" };
+    case "image/webp":      return { kind: "image", mediaType: "image/webp" };
+    case "image/gif":       return { kind: "image", mediaType: "image/gif" };
+    case "image/jpeg":
+    case "image/jpg":       return { kind: "image", mediaType: "image/jpeg" };
+  }
+
+  // 2. Magic-byte detection sur les premiers octets
+  if (bytes.length >= 4) {
+    // PDF : %PDF
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+      return { kind: "pdf", mediaType: "application/pdf" };
+    }
+    // PNG : 89 50 4E 47
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+      return { kind: "image", mediaType: "image/png" };
+    }
+    // JPEG : FF D8 FF
+    if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+      return { kind: "image", mediaType: "image/jpeg" };
+    }
+    // GIF : 47 49 46 38 (GIF8)
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
+      return { kind: "image", mediaType: "image/gif" };
+    }
+    // WebP : RIFF....WEBP (bytes 0-3 = RIFF, bytes 8-11 = WEBP)
+    if (
+      bytes.length >= 12 &&
+      bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+      bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50
+    ) {
+      return { kind: "image", mediaType: "image/webp" };
+    }
+  }
+
+  // 3. Extension du filename (dernier recours, peu fiable)
+  const ext = imagePath.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "pdf")  return { kind: "pdf",   mediaType: "application/pdf" };
+  if (ext === "png")  return { kind: "image", mediaType: "image/png" };
+  if (ext === "webp") return { kind: "image", mediaType: "image/webp" };
+  if (ext === "gif")  return { kind: "image", mediaType: "image/gif" };
+  return { kind: "image", mediaType: "image/jpeg" };
+}
+
+const PDF_UNSUPPORTED_MSG =
+  "Ce format PDF n'est pas supporté, veuillez utiliser une photo ou un PDF image.";
+const IMAGE_UNREADABLE_MSG =
+  "Lecture impossible — réessayez avec une photo plus nette.";
+
 async function upsertSupplier(
   sb: SupabaseClient,
   restaurantId: string,
@@ -511,7 +601,7 @@ serve(async (req: Request) => {
       .download(invoice.image_path);
 
     if (dlErr || !imageBlob) {
-      await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+      await markInvoiceError(sb, invoice_id, "Image introuvable. Réimportez la facture.");
       if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: "Image introuvable dans Storage" }, 404);
     }
@@ -523,31 +613,48 @@ serve(async (req: Request) => {
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     const base64 = btoa(binary);
 
-    // Détection du type de fichier : Claude API distingue 'image' (jpg/png/webp/gif)
-    // de 'document' (pdf). Avant on envoyait tout en image/jpeg → les PDFs étaient
-    // refusés par l'API.
-    const ext = invoice.image_path.split(".").pop()?.toLowerCase() ?? "jpg";
-    const isPdf = ext === "pdf";
-    const imageMediaType = ext === "png" ? "image/png"
-      : ext === "webp" ? "image/webp"
-      : ext === "gif" ? "image/gif"
-      : "image/jpeg";
+    // Détection robuste : MIME stocké → magic-byte → extension. Indispensable
+    // pour les PDFs Google Docs où le navigateur peut envoyer un Content-Type
+    // erroné, et pour les filenames sans extension.
+    const fileKind = detectFileKind(
+      invoice.content_type ?? null,
+      bytes,
+      invoice.image_path,
+    );
+    const isPdf = fileKind.kind === "pdf";
+    // Message d'erreur user-facing à utiliser en cas d'échec de Claude :
+    // distingue PDF non supporté vs image illisible, pour guider le chef.
+    const failureMessage = isPdf ? PDF_UNSUPPORTED_MSG : IMAGE_UNREADABLE_MSG;
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
 
+    // Claude API : `document` pour les PDFs (support natif Anthropic depuis
+    // Claude 3.5 Sonnet), `image` pour le reste. Voir doc :
+    // https://docs.claude.com/en/docs/build-with-claude/pdf-support
     const fileBlock = isPdf
       ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: base64 } }
-      : { type: "image" as const, source: { type: "base64" as const, media_type: imageMediaType, data: base64 } };
+      : { type: "image" as const, source: { type: "base64" as const, media_type: fileKind.mediaType, data: base64 } };
 
-    const claudeResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      messages: [{
-        role: "user",
-        // deno-lint-ignore no-explicit-any
-        content: [fileBlock as any, { type: "text", text: EXTRACTION_PROMPT }],
-      }],
-    });
+    let claudeResponse;
+    try {
+      claudeResponse = await anthropic.messages.create({
+        model: "claude-sonnet-4-6",
+        max_tokens: 4096,
+        messages: [{
+          role: "user",
+          // deno-lint-ignore no-explicit-any
+          content: [fileBlock as any, { type: "text", text: EXTRACTION_PROMPT }],
+        }],
+      });
+    } catch (err) {
+      // Anthropic refuse parfois certains PDFs (texte vector pur sans image,
+      // PDFs chiffrés, etc.) — on remonte le message dédié plutôt qu'un
+      // générique "Lecture impossible".
+      console.error("[process-invoice] anthropic.messages.create failed:", err);
+      await markInvoiceError(sb, invoice_id, failureMessage);
+      if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
+      return json({ error: failureMessage, details: String(err) }, 422);
+    }
 
     const rawText = claudeResponse.content
       .filter((b) => b.type === "text")
@@ -558,9 +665,12 @@ serve(async (req: Request) => {
     try {
       extracted = parseClaudeResponse(rawText);
     } catch (err) {
-      await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+      // Si Claude a répondu mais que la réponse n'est pas un JSON parseable,
+      // c'est presque toujours qu'il n'a "rien vu" d'exploitable (PDF texte
+      // vector, image floue). Message dédié selon le type de fichier.
+      await markInvoiceError(sb, invoice_id, failureMessage);
       if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
-      return json({ error: "Échec parsing Claude", details: String(err) }, 422);
+      return json({ error: failureMessage, details: String(err) }, 422);
     }
 
     // Pipeline complet
@@ -593,9 +703,15 @@ serve(async (req: Request) => {
     // (/api/invoices/process via after()) qui le fera en voyant le 5xx, pour
     // éviter un double-release. Les erreurs "métier" (parsing/duplicate/image
     // missing) sont gérées plus haut dans la chaîne, là on libère localement.
+    //
+    // Pas de message dédié au type de fichier ici : on ne sait pas si on a
+    // crashé avant ou après la détection. Message générique.
     if (invoice_id && sb) {
       try {
-        await sb.from("invoices").update({ status: "error" }).eq("id", invoice_id);
+        await sb.from("invoices").update({
+          status: "error",
+          error_message: "Une erreur inattendue est survenue. Réessayez ou contactez le support.",
+        }).eq("id", invoice_id);
       } catch (e2) {
         console.error("[process-invoice] failed to mark invoice as error:", e2);
       }

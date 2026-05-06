@@ -168,11 +168,14 @@ export async function POST(request: NextRequest) {
       if (uploadError) throw internal("Erreur lors de l'upload de l'image", uploadError);
 
       // ─── Insert facture (status: pending) ───
+      // content_type stocké pour que l'edge function distingue image vs PDF
+      // sans dépendre de l'extension du filename (parfois absente ou tordue).
       const { data: invoice, error: invoiceError } = await supabase
         .from("invoices")
         .insert({
           restaurant_id: restaurantId,
           image_path: storagePath,
+          content_type: file.type || null,
           status: "pending",
         })
         .select("id")

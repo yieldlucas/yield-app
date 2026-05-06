@@ -30,6 +30,9 @@ export interface RecentInvoice {
   /** null = pas de comparaison possible (premier scan de ce produit). */
   variation_pct?: number | null;
   processing_step?: "extracting" | "matching" | "alerting" | "processed" | null;
+  /** Message d'erreur précis quand status='error' (alimenté par l'edge function).
+   *  Ex: "Ce format PDF n'est pas supporté…" — utilisé dans le tooltip de la card. */
+  error_message?: string | null;
 }
 
 export interface BatchItem {

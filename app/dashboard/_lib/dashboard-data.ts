@@ -27,7 +27,7 @@ export async function fetchInvoices(): Promise<RecentInvoice[]> {
   const { data, error } = await supabase
     .from("invoices")
     .select(
-      "id, status, processing_step, total_ht, variation_pct, invoice_date, created_at, total_items_count, supplier:suppliers(name)",
+      "id, status, processing_step, total_ht, variation_pct, invoice_date, created_at, total_items_count, error_message, supplier:suppliers(name)",
     )
     .order("created_at", { ascending: false })
     .limit(RECENT_INVOICES_LIMIT);
@@ -41,6 +41,7 @@ export async function fetchInvoices(): Promise<RecentInvoice[]> {
     invoice_date: string | null;
     created_at: string;
     total_items_count: number | null;
+    error_message: string | null;
     supplier: { name: string } | null;
   };
   return (data as unknown as Row[]).map((r) => ({
@@ -52,6 +53,7 @@ export async function fetchInvoices(): Promise<RecentInvoice[]> {
     total_ht: r.total_ht,
     variation_pct: r.variation_pct,
     processing_step: r.processing_step,
+    error_message: r.error_message,
   }));
 }
 
@@ -71,7 +73,8 @@ export function invoicesChanged(prev: RecentInvoice[], next: RecentInvoice[]): b
       a.processing_step !== b.processing_step ||
       a.total_ht !== b.total_ht ||
       a.variation_pct !== b.variation_pct ||
-      a.items_count !== b.items_count
+      a.items_count !== b.items_count ||
+      a.error_message !== b.error_message
     ) {
       return true;
     }

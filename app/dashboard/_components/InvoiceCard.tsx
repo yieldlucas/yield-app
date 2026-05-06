@@ -114,7 +114,12 @@ export function InvoiceCard({
               <span className="text-[11px] font-medium">{stepLabel}</span>
             </div>
           ) : isError ? (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-100">
+            // Pastille courte + tooltip avec le message précis (PDF non
+            // supporté, image floue, etc.) écrit par l'edge function.
+            <span
+              className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-600 border border-rose-100"
+              title={inv.error_message ?? "Lecture impossible"}
+            >
               Lecture impossible
             </span>
           ) : isDuplicate ? (

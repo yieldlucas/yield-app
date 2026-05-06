@@ -100,7 +100,7 @@ export async function processOne(
     try {
       pollResult = await supabase
         .from("invoices")
-        .select("status, processing_step, total_items_count, supplier:suppliers(name)")
+        .select("status, processing_step, total_items_count, error_message, supplier:suppliers(name)")
         .eq("id", invoiceId)
         .maybeSingle();
     } catch {
@@ -131,6 +131,7 @@ export async function processOne(
       status: string;
       processing_step: string | null;
       total_items_count: number | null;
+      error_message: string | null;
       supplier: { name: string } | null;
     };
 
@@ -159,7 +160,10 @@ export async function processOne(
       throw new Error("Cette facture a déjà été enregistrée.");
     }
     if (row.status === "error") {
-      throw new Error("Lecture impossible — réessayez avec une photo plus nette.");
+      // L'edge function a écrit un message précis dans error_message
+      // (PDF non supporté, image illisible, etc.). On le propage tel quel ;
+      // fallback générique uniquement si la colonne est vide (vieille facture).
+      throw new Error(row.error_message ?? "Lecture impossible — réessayez avec une photo plus nette.");
     }
   }
   throw new Error("L'analyse prend trop de temps. Réessayez dans un moment.");
