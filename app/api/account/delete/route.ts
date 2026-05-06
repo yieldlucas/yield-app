@@ -1,40 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { authorizeBearer } from "@/lib/api-auth";
+import { getServiceClient } from "@/lib/supabase-admin";
+import { apiErrorResponse, internal } from "@/lib/api-error";
 
 export const runtime = "nodejs";
 
+/**
+ * Suppression de compte (RGPD). L'identité est vérifiée via le Bearer JWT
+ * (clé anon), et la suppression elle-même utilise le service-role
+ * (auth.admin.deleteUser). La cascade DB (ON DELETE CASCADE) supprime ensuite
+ * profiles, restaurants, invoices, etc. Le storage est nettoyé séparément
+ * par un trigger ou un cron — voir migration 002.
+ */
 export async function POST(req: NextRequest) {
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
+  try {
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw internal("Service role non configuré");
+    }
+    const { userId } = await authorizeBearer(req);
+
+    const adminClient = getServiceClient();
+    const { error: deleteError } = await adminClient.auth.admin.deleteUser(userId);
+    if (deleteError) throw internal("Suppression du compte impossible", deleteError);
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return apiErrorResponse(err, "account/delete");
   }
-
-  const authHeader = req.headers.get("authorization");
-  const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  if (!accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  // Vérifie l'identité de l'appelant avec la clé anon (pas la service role)
-  const userClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-  const { data: { user }, error: authError } = await userClient.auth.getUser(accessToken);
-  if (authError || !user) {
-    return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-  }
-
-  // Action destructive avec la service role
-  const adminClient = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-
-  const { error: deleteError } = await adminClient.auth.admin.deleteUser(user.id);
-  if (deleteError) {
-    return NextResponse.json({ error: deleteError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true });
 }

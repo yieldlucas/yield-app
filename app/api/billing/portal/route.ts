@@ -1,52 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+import { authorizeBearer } from "@/lib/api-auth";
+import { apiErrorResponse, internal, notFound } from "@/lib/api-error";
 
 export const runtime = "nodejs";
 
+/**
+ * Crée une session Stripe Billing Portal pour qu'un user abonné gère son
+ * paiement, télécharge ses factures, ou résilie. Le `stripe_customer_id`
+ * est lu depuis profiles (alimenté par le webhook checkout.session.completed).
+ */
 export async function POST(req: NextRequest) {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
-  }
+  try {
+    if (!process.env.STRIPE_SECRET_KEY) {
+      throw internal("Stripe non configuré");
+    }
+    const { userId, supabase } = await authorizeBearer(req);
 
-  const authHeader = req.headers.get("authorization");
-  const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-  if (!accessToken) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("stripe_customer_id")
+      .eq("id", userId)
+      .maybeSingle();
 
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { global: { headers: { Authorization: `Bearer ${accessToken}` } } }
-  );
-  const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-  if (authError || !user) {
-    return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-  }
+    if (profileError) throw internal("Erreur lecture profil", profileError);
+    const customerId = (profile as { stripe_customer_id?: string } | null)?.stripe_customer_id;
+    if (!customerId) throw notFound("Aucun abonnement actif sur ce compte");
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("stripe_customer_id")
-    .eq("id", user.id)
-    .maybeSingle();
+    const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    const origin = req.headers.get("origin") ?? req.nextUrl.origin;
 
-  if (profileError || !profile?.stripe_customer_id) {
-    console.warn("[billing/portal] no customer_id", {
-      user_id: user.id,
-      profile_found: Boolean(profile),
-      error: profileError?.message,
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: `${origin}/dashboard`,
     });
-    return NextResponse.json({ error: "No active subscription" }, { status: 404 });
+
+    return NextResponse.json({ url: session.url });
+  } catch (err) {
+    return apiErrorResponse(err, "billing/portal");
   }
-
-  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-  const origin = req.headers.get("origin") ?? req.nextUrl.origin;
-
-  const session = await stripe.billingPortal.sessions.create({
-    customer: profile.stripe_customer_id,
-    return_url: `${origin}/dashboard`,
-  });
-
-  return NextResponse.json({ url: session.url });
 }

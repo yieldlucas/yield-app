@@ -50,7 +50,14 @@ interface AffectedRecipe {
 }
 
 // ─── Claude Vision Prompt ─────────────────────────────────
+//
+// Concentré sur l'extraction JSON structurée. Inclut une section ENCODAGE
+// qui force UTF-8 propre côté sortie : sans elle, on a vu remonter des
+// apostrophes typographiques (’) et espaces insécables ( ) qui cassaient
+// la troncature et rendaient les libellés mal alignés dans le PDF
+// @react-pdf/renderer (qui ne porte pas tous les glyphes Unicode étendus).
 const EXTRACTION_PROMPT = `Tu es un assistant spécialisé dans l'analyse de factures de restauration française.
+Ton SEUL job : produire un JSON strict, parseable, fidèle à la facture.
 
 PRÉTRAITEMENT (à faire mentalement avant l'extraction) :
 - Si la facture est inclinée ou photographiée de biais, redresse-la mentalement (perspective) avant de lire.
@@ -59,18 +66,31 @@ PRÉTRAITEMENT (à faire mentalement avant l'extraction) :
 - Si tu vois une signature, un tampon ou une note manuscrite par-dessus une ligne, lis quand même la ligne d'origine en dessous.
 - Si l'image est partiellement coupée (un bord manque), extrais quand même ce qui est visible et signale-le dans extraction_notes.
 
-Analyse ensuite cette facture fournisseur et extrais les informations suivantes au format JSON strict.
+ENCODAGE & CARACTÈRES SPÉCIAUX (CRITIQUE pour le PDF en aval) :
+- Sortie en UTF-8 strict. Conserve les accents français : à, â, ä, é, è, ê, ë, î, ï, ô, ö, ù, û, ü, ÿ, ç.
+- Conserve les ligatures : œ (oeuf, bœuf, cœur), Œ, æ, Æ. NE PAS les remplacer par "oe" ou "ae".
+- Convertis les apostrophes typographiques (’ ‘) en apostrophe droite ASCII (').
+- Convertis les guillemets typographiques (“ ”) en guillemets droits ASCII (").
+- Remplace les espaces insécables (U+00A0) par des espaces normaux.
+- Remplace les tirets cadratins (— –) par des tirets simples (-) dans les libellés.
+- Pour les prix : les valeurs numériques (unit_price_ht, total_price_ht, vat_rate) doivent être des nombres JSON, JAMAIS des chaînes. Le symbole € NE DOIT PAS apparaître — c'est un nombre. Convertis "1,25 €" et "1.25 EUR" et "1,25€" en 1.25.
+- Pour la quantité : nombre JSON. "1,5 kg" → quantity=1.5, unit="kg". Évite les fractions Unicode (½ ¼) — convertis en décimales.
 
 RÈGLES D'EXTRACTION :
-- Les prix sont TOUJOURS en euros HT (hors taxe)
-- Si un prix semble TTC, convertis-le en HT avec le taux de TVA identifié
-- Les taux de TVA alimentaires en France : 0%, 5.5% (produits bruts), 10% (plats préparés), 20% (alcool)
-- Normalise les unités : kg, g, L, cL, mL, pièce, barquette, carton, bouteille, sachet, botte, filet, plateau, unité
-- Si une ligne est illisible, inclus-la quand même avec les champs disponibles
-- invoice_date doit être au format ISO 8601 (YYYY-MM-DD)
-- extraction_confidence : "high" si tout est lisible, "medium" si quelques zones floues, "low" si image dégradée
+- Les prix sont TOUJOURS en euros HT (hors taxe). Si un prix est annoncé TTC, convertis-le en HT avec le taux de TVA identifié.
+- Taux de TVA alimentaires en France : 0%, 5.5 (produits bruts), 10 (plats préparés), 20 (alcool). Toujours en nombre, sans le symbole %.
+- Normalise les unités à l'une de : kg, g, L, cL, mL, piece, barquette, carton, bouteille, sachet, botte, filet, plateau, unite (sans accents pour l'unité — le frontend les ré-affiche en français propre).
+- Si une ligne est illisible, inclus-la quand même : raw_label = ce que tu vois (peut être tronqué), unit_price_ht et total_price_ht à 0, et signale-le dans extraction_notes.
+- invoice_date au format ISO 8601 strict (YYYY-MM-DD). Si la date est ambiguë (jour/mois inversés), choisis l'interprétation française (DD/MM/YYYY) et signale dans extraction_notes.
+- extraction_confidence : "high" si tout est lisible, "medium" si quelques zones floues, "low" si image dégradée.
 
-RETOURNE UNIQUEMENT CE JSON (sans markdown, sans explication) :
+FORMAT DE RÉPONSE — RÈGLE STRICTE :
+- Retourne UNIQUEMENT le JSON, RIEN d'autre.
+- PAS de bloc \`\`\`json … \`\`\`. PAS de texte avant ou après. PAS de commentaires // ni /* */.
+- Toutes les chaînes doivent être correctement échappées (guillemets internes en \\", retours ligne en \\n).
+- Si un champ est inconnu, mets null (pas "N/A", pas "" en string).
+
+SCHÉMA :
 {
   "supplier_name": "string",
   "invoice_number": "string | null",

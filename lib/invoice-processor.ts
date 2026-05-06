@@ -220,17 +220,22 @@ async function getAffectedRecipes(
 
   if (!usages || usages.length === 0) return [];
 
-  return usages
-    .filter((u: any) => u.recipe)
-    .map((u: any) => {
-      const recipe = u.recipe as {
-        id: string;
-        name: string;
-        selling_price: number;
-        vat_rate: number;
-        portions: number;
-      };
+  type RecipeUsage = {
+    quantity: number;
+    unit: string | null;
+    recipe: {
+      id: string;
+      name: string;
+      selling_price: number;
+      vat_rate: number;
+      portions: number;
+    } | null;
+  };
 
+  return (usages as unknown as RecipeUsage[])
+    .filter((u): u is RecipeUsage & { recipe: NonNullable<RecipeUsage["recipe"]> } => u.recipe !== null)
+    .map((u) => {
+      const recipe = u.recipe;
       const sellingPriceHt = recipe.selling_price / (1 + recipe.vat_rate / 100);
       const extraCost = (newPrice - oldPrice) * u.quantity;
       const marginImpactPts = sellingPriceHt > 0

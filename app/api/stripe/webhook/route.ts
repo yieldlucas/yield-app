@@ -1,13 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Healthcheck — permet de tester depuis un navigateur que la route existe.
-// GET https://yieldapp.fr/api/stripe/webhook → 200 si la route est déployée.
-// (Ne touche à rien, juste un OK pour valider le routing.)
+// Note : ce webhook NE passe PAS par apiErrorResponse parce que Stripe attend
+// un format de réponse spécifique :
+//   - 200 = ack (Stripe ne retentera pas)
+//   - 4xx = erreur définitive (Stripe ne retentera pas)
+//   - 5xx = erreur transitoire (Stripe retentera selon backoff)
+// On garde donc les NextResponse.json directs, et tous les logs passent par
+// le logger commun (scrub PII automatique pour les emails / JWTs / UUIDs).
+
+/**
+ * Healthcheck — permet de tester depuis un navigateur que la route existe.
+ * GET https://yieldapp.fr/api/stripe/webhook → 200 si la route est déployée.
+ */
 export async function GET() {
   return NextResponse.json({
     ok: true,
@@ -17,13 +27,18 @@ export async function GET() {
   });
 }
 
+/**
+ * Webhook Stripe : maintient `profiles.is_subscribed` à jour.
+ * Idempotent via `processed_events` (insert avec contrainte unique). En cas
+ * de unique_violation (event déjà reçu), on ack 200 sans rien faire.
+ */
 export async function POST(req: NextRequest) {
   if (!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET) {
-    console.error("[stripe/webhook] env missing: STRIPE_SECRET_KEY or STRIPE_WEBHOOK_SECRET");
+    logger.error("stripe/webhook", "env missing", { keys: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"] });
     return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
   }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    console.error("[stripe/webhook] env missing: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL");
+    logger.error("stripe/webhook", "env missing", { keys: ["SUPABASE_SERVICE_ROLE_KEY", "NEXT_PUBLIC_SUPABASE_URL"] });
     return NextResponse.json({ error: "Supabase not configured" }, { status: 500 });
   }
 
@@ -38,21 +53,17 @@ export async function POST(req: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
+    event = stripe.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Invalid signature";
-    console.error("[stripe/webhook] signature verification failed:", message);
+    logger.error("stripe/webhook", "signature verification failed", { message });
     return NextResponse.json({ error: `Webhook Error: ${message}` }, { status: 400 });
   }
 
   const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false, autoRefreshToken: false } }
+    { auth: { persistSession: false, autoRefreshToken: false } },
   );
 
   // ─── Idempotency : ack immédiat si l'event a déjà été traité ───
@@ -72,9 +83,9 @@ export async function POST(req: NextRequest) {
     // gracieuse (pas d'idempotency mais on traite quand même) pour ne pas
     // bloquer le tunnel commercial.
     if (code === "42P01") {
-      console.warn("[stripe/webhook] table processed_events absente — APPLIQUER LA MIGRATION 002");
+      logger.warn("stripe/webhook", "table processed_events absente — APPLIQUER LA MIGRATION 002");
     } else {
-      console.error("[stripe/webhook] idempotency check failed:", idempError.message, "code:", code);
+      logger.error("stripe/webhook", "idempotency check failed", { message: idempError.message, code });
       return NextResponse.json({ error: idempError.message }, { status: 500 });
     }
   }
@@ -98,7 +109,7 @@ export async function POST(req: NextRequest) {
           ?? null;
 
         if (!userId) {
-          console.warn("[stripe/webhook] checkout.session.completed without client_reference_id, session=", session.id);
+          logger.warn("stripe/webhook", "checkout.session.completed without client_reference_id", { sessionId: session.id });
           return NextResponse.json({ received: true });
         }
 
@@ -115,16 +126,16 @@ export async function POST(req: NextRequest) {
               is_subscribed: true,
               stripe_customer_id: customerId,
             },
-            { onConflict: "id" }
+            { onConflict: "id" },
           )
           .select("id, is_subscribed, stripe_customer_id");
 
         if (upsertError) {
-          console.error("[stripe/webhook] upsert profiles failed:", upsertError.message);
+          logger.error("stripe/webhook", "upsert profiles failed", { message: upsertError.message });
           throw upsertError;
         }
         if (!upserted || upserted.length === 0) {
-          console.error("[stripe/webhook] upsert returned 0 rows, userId=", userId);
+          logger.error("stripe/webhook", "upsert returned 0 rows", { userId });
         }
         break;
       }
@@ -168,7 +179,7 @@ export async function POST(req: NextRequest) {
         const subscriptionId = typeof rawSub === "string" ? rawSub : rawSub?.id ?? null;
 
         if (!customerId) {
-          console.warn("[stripe/webhook] invoice.paid sans customer", invoice.id);
+          logger.warn("stripe/webhook", "invoice.paid sans customer", { invoiceId: invoice.id });
           break;
         }
 
@@ -180,13 +191,11 @@ export async function POST(req: NextRequest) {
           .select("id");
 
         if (updateErr) {
-          console.error("[stripe/webhook] invoice.paid update err:", updateErr.message);
+          logger.error("stripe/webhook", "invoice.paid update err", { message: updateErr.message });
           throw updateErr;
         }
 
-        if (updated && updated.length > 0) {
-          break;
-        }
+        if (updated && updated.length > 0) break;
 
         // Stratégie 2 — Profil pas trouvé par customer_id : on récupère la subscription
         // pour lire metadata.supabase_user_id (qu'on stocke à la création du checkout)
@@ -203,20 +212,20 @@ export async function POST(req: NextRequest) {
                     is_subscribed: true,
                     stripe_customer_id: customerId,
                   },
-                  { onConflict: "id" }
+                  { onConflict: "id" },
                 );
               if (upsertErr) {
-                console.error("[stripe/webhook] invoice.paid upsert via metadata err:", upsertErr.message);
+                logger.error("stripe/webhook", "invoice.paid upsert via metadata err", { message: upsertErr.message });
                 throw upsertErr;
               }
               break;
             }
           } catch (subErr) {
-            console.error("[stripe/webhook] retrieve subscription failed:", subErr instanceof Error ? subErr.message : subErr);
+            logger.error("stripe/webhook", "retrieve subscription failed", { error: subErr });
           }
         }
 
-        console.warn(`[stripe/webhook] invoice.paid: no profile found for customer=${customerId}`);
+        logger.warn("stripe/webhook", "invoice.paid: no profile found for customer", { customerId });
         break;
       }
 
@@ -227,19 +236,19 @@ export async function POST(req: NextRequest) {
           : invoice.customer?.id ?? null;
         // On ne coupe PAS immédiatement : Stripe retente le paiement 3-4 fois sur 2-3 semaines.
         // L'accès sera coupé si Stripe passe l'abo en "past_due" puis "canceled" via subscription.updated.
-        console.warn(`[stripe/webhook] invoice.payment_failed: customer=${customerId} invoice=${invoice.id}`);
+        logger.warn("stripe/webhook", "invoice.payment_failed", { customerId, invoiceId: invoice.id });
         break;
       }
 
       default:
-        // Les autres events sont ignorés mais on ACK quand même pour que Stripe ne retente pas
+        // Les autres events sont ignorés mais on ACK quand même pour que Stripe ne retente pas.
         break;
     }
 
     return NextResponse.json({ received: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Webhook handler failed";
-    console.error("[stripe/webhook]", message);
+    logger.error("stripe/webhook", "handler threw", { message });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

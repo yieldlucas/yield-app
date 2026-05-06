@@ -1,30 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
-import { createClient } from "@supabase/supabase-js";
+import { authorizeBearer } from "@/lib/api-auth";
+import { apiErrorResponse, badRequest, internal } from "@/lib/api-error";
+
+export const runtime = "nodejs";
 
 const PRICE_ID = "price_1TPjSTDhKLnU8Or6UJi7p4mQ";
 const TRIAL_DAYS = 14;
 
+/**
+ * Crée une session Stripe Checkout pour démarrer l'essai gratuit (14 jours)
+ * + abonnement Lancement (19,99€/mois). Retourne `{ url }` à ouvrir côté
+ * client. Le webhook /api/stripe/webhook prendra ensuite la main pour passer
+ * `profiles.is_subscribed = true` quand le paiement est confirmé.
+ */
 export async function POST(req: NextRequest) {
   try {
     if (!process.env.STRIPE_SECRET_KEY) {
-      return NextResponse.json({ error: "Stripe not configured" }, { status: 500 });
+      throw internal("Stripe non configuré");
     }
-
-    const authHeader = req.headers.get("authorization");
-    const accessToken = authHeader?.replace(/^Bearer\s+/i, "").trim();
-    if (!accessToken) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken);
-    if (authError || !user?.email) {
-      return NextResponse.json({ error: "Invalid session" }, { status: 401 });
-    }
+    const { userId, email } = await authorizeBearer(req);
+    if (!email) throw badRequest("Email du compte introuvable");
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
     const origin = req.headers.get("origin") ?? req.nextUrl.origin;
@@ -35,10 +31,10 @@ export async function POST(req: NextRequest) {
       line_items: [{ price: PRICE_ID, quantity: 1 }],
       subscription_data: {
         trial_period_days: TRIAL_DAYS,
-        metadata: { supabase_user_id: user.id },
+        metadata: { supabase_user_id: userId },
       },
-      customer_email: user.email,
-      client_reference_id: user.id,
+      customer_email: email,
+      client_reference_id: userId,
       success_url: `${origin}/dashboard?checkout=success`,
       cancel_url: `${origin}/dashboard?checkout=cancel`,
       allow_promotion_codes: true,
@@ -47,8 +43,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Checkout failed";
-    console.error("[/api/checkout]", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(err, "checkout");
   }
 }
