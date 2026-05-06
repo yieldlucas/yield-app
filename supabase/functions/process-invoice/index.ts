@@ -541,6 +541,28 @@ async function processInvoice(
   return { invoice_id: invoiceId, extracted, items_matched: itemsMatched, items_created: itemsCreated, alerts };
 }
 
+// Message dédié aux pannes de configuration serveur (clé API manquante,
+// secret pas synchronisé). Différent des messages "format de fichier" pour
+// ne pas faire culpabiliser le chef pour un problème côté infra.
+const SERVER_CONFIG_ERROR_MSG =
+  "Configuration serveur incomplète. Contactez le support.";
+
+/**
+ * Reconnaît une erreur d'authentification du SDK Anthropic. Couvre :
+ *   - clé absente (jetée par le SDK avant l'envoi)
+ *   - clé invalide / révoquée / expirée (HTTP 401 retourné par l'API)
+ * Distingue de l'autre famille (PDF refusé, image floue) pour qu'on ne dise
+ * pas au chef que son fichier est mauvais alors que c'est notre conf qui pose
+ * problème.
+ */
+function isAnthropicAuthError(err: unknown): boolean {
+  if (!err) return false;
+  const status = (err as { status?: number }).status;
+  if (status === 401) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return /authentication|api[\s_-]?key|x-api-key|authorization/i.test(message);
+}
+
 // ─── Entry point ──────────────────────────────────────────
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
@@ -553,6 +575,21 @@ serve(async (req: Request) => {
   let restaurant_id: string | null = null;
 
   try {
+    // ─── Vérif config serveur (avant tout pipeline) ───
+    // ANTHROPIC_API_KEY doit être set comme secret Supabase Edge Functions :
+    //   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+    // Les variables Vercel ne sont PAS visibles ici (runtime Deno isolé).
+    // Sans cette garde, le SDK Anthropic jetait "Could not resolve
+    // authentication method" qu'on traduisait en "PDF non supporté" — bug
+    // de classification fixé en parallèle (cf catch sur messages.create).
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!anthropicKey) {
+      console.error("[process-invoice] ANTHROPIC_API_KEY missing — set via `supabase secrets set ANTHROPIC_API_KEY=...`");
+    }
+    if (!Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || !Deno.env.get("SUPABASE_URL")) {
+      console.error("[process-invoice] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY missing");
+    }
+
     const body = await req.json();
     invoice_id = body.invoice_id ?? null;
     if (!invoice_id) return json({ error: "invoice_id requis" }, 400);
@@ -626,7 +663,23 @@ serve(async (req: Request) => {
     // distingue PDF non supporté vs image illisible, pour guider le chef.
     const failureMessage = isPdf ? PDF_UNSUPPORTED_MSG : IMAGE_UNREADABLE_MSG;
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+    // Refuse net si la clé n'est pas configurée — le SDK Anthropic jetterait
+    // "Could not resolve authentication method" sinon, et on n'a aucun moyen
+    // depuis cette exception d'expliquer au chef que c'est un problème
+    // d'infra, pas son PDF.
+    //
+    // On retourne 500 (config issue = retryable) et on NE libère PAS le slot
+    // de quota ici : c'est le caller (/api/invoices/process via after()) qui
+    // le fera en voyant la 5xx, pour éviter un double-release.
+    if (!anthropicKey) {
+      await markInvoiceError(sb, invoice_id, SERVER_CONFIG_ERROR_MSG);
+      return json({
+        error: SERVER_CONFIG_ERROR_MSG,
+        code: "MISSING_ANTHROPIC_KEY",
+      }, 500);
+    }
+
+    const anthropic = new Anthropic({ apiKey: anthropicKey });
 
     // Claude API : `document` pour les PDFs (support natif Anthropic depuis
     // Claude 3.5 Sonnet), `image` pour le reste. Voir doc :
@@ -647,10 +700,24 @@ serve(async (req: Request) => {
         }],
       });
     } catch (err) {
-      // Anthropic refuse parfois certains PDFs (texte vector pur sans image,
-      // PDFs chiffrés, etc.) — on remonte le message dédié plutôt qu'un
-      // générique "Lecture impossible".
       console.error("[process-invoice] anthropic.messages.create failed:", err);
+
+      // Distingue les familles d'erreurs pour ne pas mentir au chef :
+      //   - 401 / "authentication" : c'est NOTRE conf qui est cassée (clé
+      //     révoquée, secret pas propagé), pas son fichier.
+      //   - autre : Anthropic a refusé le contenu (PDF texte pur, image
+      //     floue, format non reconnu). Là le message file-kind est légitime.
+      if (isAnthropicAuthError(err)) {
+        // Idem MISSING_ANTHROPIC_KEY : on retourne 500, le caller libère le
+        // slot. Pas de release local pour éviter le double-release.
+        await markInvoiceError(sb, invoice_id, SERVER_CONFIG_ERROR_MSG);
+        return json({
+          error: SERVER_CONFIG_ERROR_MSG,
+          code: "ANTHROPIC_AUTH_FAILED",
+          details: String(err),
+        }, 500);
+      }
+
       await markInvoiceError(sb, invoice_id, failureMessage);
       if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: failureMessage, details: String(err) }, 422);
