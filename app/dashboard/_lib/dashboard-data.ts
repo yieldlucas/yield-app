@@ -82,12 +82,15 @@ export function invoicesChanged(prev: RecentInvoice[], next: RecentInvoice[]): b
   return false;
 }
 
-/** Charge les 10 alertes non-lues les plus récentes. */
+/**
+ * Charge les 10 alertes non-lues les plus récentes, jointes au nom du
+ * fournisseur de la facture qui les a déclenchées (pour le drawer cloche).
+ */
 export async function fetchAlerts(): Promise<Alert[]> {
   const { data, error } = await supabase
     .from("margin_alerts")
     .select(
-      "id, price_change_pct, old_price, new_price, affected_recipes, is_read, created_at, product:products(name)",
+      "id, price_change_pct, old_price, new_price, affected_recipes, is_read, created_at, invoice_id, product:products(name), invoice:invoices(supplier:suppliers(name))",
     )
     .eq("is_read", false)
     .order("created_at", { ascending: false })
@@ -101,7 +104,9 @@ export async function fetchAlerts(): Promise<Alert[]> {
     affected_recipes: { name: string; margin_impact_pts: number }[] | null;
     is_read: boolean;
     created_at: string;
+    invoice_id: string | null;
     product: { name: string } | null;
+    invoice: { supplier: { name: string } | null } | null;
   };
   return (data as unknown as Row[]).map((r) => ({
     id: r.id,
@@ -112,6 +117,8 @@ export async function fetchAlerts(): Promise<Alert[]> {
     affected_recipes: r.affected_recipes ?? [],
     is_read: r.is_read,
     created_at: r.created_at,
+    invoice_id: r.invoice_id,
+    supplier_name: r.invoice?.supplier?.name ?? null,
   }));
 }
 

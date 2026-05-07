@@ -14,7 +14,6 @@ import { openSignedExport } from "@/lib/export-download";
 import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
 import { StackTray } from "./_components/StackTray";
-import { AlertCard } from "./_components/AlertCard";
 import { TrialBanner } from "./_components/TrialBanner";
 import { OnboardingModal } from "./_components/OnboardingModal";
 import { ConciergeButton } from "./_components/ConciergeButton";
@@ -22,7 +21,6 @@ import { BatchOverlay } from "./_components/BatchOverlay";
 import { QuotaExceededModal } from "./_components/QuotaExceededModal";
 import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
-import { BilanMatiere } from "./_components/BilanMatiere";
 import { EmptyScanCTA } from "./_components/EmptyScanCTA";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
@@ -32,7 +30,7 @@ import { useStripeActivationPolling } from "./_hooks/useStripeActivationPolling"
 import { useInvoicesPolling } from "./_hooks/useInvoicesPolling";
 import {
   fetchUsage, fetchInvoices, invoicesChanged, fetchAlerts,
-  markAlertRead, markAlertsRead, deleteInvoice,
+  markAlertRead, deleteInvoice,
 } from "./_lib/dashboard-data";
 import { processBatch, type BatchInput } from "./_lib/process-batch";
 
@@ -164,11 +162,11 @@ export default function DashboardPage() {
     setAlerts((prev) => prev.filter((a) => a.id !== alertId));
     if (!(await markAlertRead(alertId))) setAlerts(previous);
   };
-  const dismissAllAlerts = async () => {
-    if (alerts.length === 0) return;
-    const previous = alerts;
-    setAlerts([]);
-    if (!(await markAlertsRead(previous.map((a) => a.id)))) setAlerts(previous);
+  /** Clic sur une alerte dans le drawer cloche : marque lue (UI optimiste)
+   *  + redirige vers la facture qui l'a déclenchée. */
+  const onAlertClick = (invoiceId: string, alertId: string) => {
+    void dismissAlert(alertId);
+    router.push(`/dashboard/invoices/${invoiceId}`);
   };
   const dismissInvoice = async (invoiceId: string) => {
     const previous = invoices;
@@ -294,15 +292,6 @@ export default function DashboardPage() {
   // ─── Dérivés pour le rendu ─────────────────────────────────
   const unreadCount = alerts.filter((a) => !a.is_read).length;
   const firstName = user?.email?.split("@")[0] ?? "";
-  const totalRecipesAffected = alerts.reduce((sum, a) => sum + (a.affected_recipes?.length ?? 0), 0);
-  const biggestSpike = alerts.length > 0
-    ? alerts.reduce((max, a) => (Math.abs(a.price_change_pct) > Math.abs(max.price_change_pct) ? a : max), alerts[0])
-    : null;
-  const today = new Date().toISOString().slice(0, 10);
-  const processedToday = invoices.filter(
-    (i) => i.status === "processed" && i.invoice_date?.slice(0, 10) === today,
-  ).length;
-  const bellBadge = unreadCount + processedToday;
   const refreshBilling = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
@@ -321,7 +310,7 @@ export default function DashboardPage() {
         isSubscribed={isSubscribed}
         portalLoading={portalLoading} onOpenPortal={openBillingPortal}
         usage={usage} onQuotaClick={() => setQuotaExceeded(true)}
-        bellBadge={bellBadge} processedToday={processedToday}
+        alerts={alerts} onAlertClick={onAlertClick}
       />
 
       <div className="max-w-lg mx-auto px-5 pt-6 space-y-8">
@@ -348,32 +337,9 @@ export default function DashboardPage() {
 
         {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
 
-        {alerts.length > 0 && (
-          <BilanMatiere unreadCount={unreadCount} totalRecipesAffected={totalRecipesAffected} biggestSpike={biggestSpike} />
-        )}
-
-        {alerts.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-slate-900 font-semibold text-base">
-                Alertes Rendement
-                {unreadCount > 0 && (
-                  <span className="ml-2 text-xs label-blue px-2 py-0.5 rounded-full">
-                    {unreadCount} nouvelle{unreadCount > 1 ? "s" : ""}
-                  </span>
-                )}
-              </h2>
-              {alerts.length > 1 && (
-                <button onClick={dismissAllAlerts} className="text-slate-400 hover:text-blue-600 text-xs font-medium">
-                  Tout marquer comme lu
-                </button>
-              )}
-            </div>
-            <div className="space-y-3">
-              {alerts.map((a) => <AlertCard key={a.id} alert={a} onDismiss={() => dismissAlert(a.id)} />)}
-            </div>
-          </motion.div>
-        )}
+        {/* Les alertes de prix vivent désormais dans la cloche du header
+            (NotificationsBell). La timeline ne contient plus que des
+            InvoiceCard pour un dashboard ultra-pro et épuré. */}
 
         {invoices.length > 0 && (
           <InvoicesList

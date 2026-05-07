@@ -17,6 +17,13 @@ export interface Alert {
   affected_recipes: { name: string; margin_impact_pts: number }[];
   is_read: boolean;
   created_at: string;
+  /** ID de la facture qui a déclenché l'alerte. NULL si la facture a été
+   *  supprimée (cascade ON DELETE SET NULL). Utilisé pour la navigation
+   *  depuis la cloche → /dashboard/invoices/[id]. */
+  invoice_id: string | null;
+  /** Nom du fournisseur de la facture liée. Affiché dans le drawer cloche
+   *  pour donner du contexte au chef. */
+  supplier_name: string | null;
 }
 
 export interface RecentInvoice {

@@ -1,12 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, ChefHat, Download, Settings, User } from "lucide-react";
+import { ChefHat, Download, Settings, User } from "lucide-react";
+import { NotificationsBell } from "./NotificationsBell";
+import { type Alert } from "./types";
 
 /**
  * Header du dashboard : logo + actions (export CSV, billing portal, badge
  * quota, cloche notifs, profil). Sticky en haut. État 100% contrôlé par les
  * props — aucune logique de fetch ici.
+ *
+ * La cloche est désormais cliquable et ouvre un drawer/popover listant les
+ * alertes. Voir NotificationsBell.
  */
 export function DashboardHeader({
   invoicesCount,
@@ -17,8 +22,8 @@ export function DashboardHeader({
   onOpenPortal,
   usage,
   onQuotaClick,
-  bellBadge,
-  processedToday,
+  alerts,
+  onAlertClick,
 }: {
   invoicesCount: number;
   exportLoading: boolean;
@@ -28,8 +33,8 @@ export function DashboardHeader({
   onOpenPortal: () => void;
   usage: { used: number; quota: number } | null;
   onQuotaClick: () => void;
-  bellBadge: number;
-  processedToday: number;
+  alerts: Alert[];
+  onAlertClick: (invoiceId: string, alertId: string) => void;
 }) {
   return (
     <div className="glass-nav sticky top-0 z-20">
@@ -70,17 +75,7 @@ export function DashboardHeader({
             </button>
           )}
           {usage && <UsageBadge usage={usage} onClick={onQuotaClick} />}
-          <div
-            className="relative"
-            title={processedToday > 0 ? `${processedToday} BL traités aujourd'hui` : "Aucune notif"}
-          >
-            <Bell size={20} className={bellBadge > 0 ? "text-slate-700" : "text-slate-400"} />
-            {bellBadge > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-blue-600 rounded-full text-white text-[9px] font-bold flex items-center justify-center">
-                {bellBadge}
-              </span>
-            )}
-          </div>
+          <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
           <Link
             href="/dashboard/profile"
             className="text-slate-400 hover:text-blue-600 transition-colors"
