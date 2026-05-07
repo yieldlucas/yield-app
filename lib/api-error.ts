@@ -62,6 +62,23 @@ export const paymentRequired = (
   context?: Record<string, unknown>,
 ) => new ApiError({ status: 402, code, publicMessage: message, context });
 
+/**
+ * 429 Too Many Requests. Le `retry_after_seconds` est inclus dans le body de
+ * la réponse (sous ce nom) — pas dans le header `Retry-After` standard, parce
+ * que notre client SPA lit le JSON en priorité. Ajouter le header en plus si
+ * un client externe en a besoin.
+ */
+export const tooManyRequests = (
+  message: string,
+  retryAfterSeconds?: number,
+  code = "RATE_LIMITED",
+) => new ApiError({
+  status: 429,
+  code,
+  publicMessage: message,
+  context: retryAfterSeconds != null ? { retry_after_seconds: retryAfterSeconds } : undefined,
+});
+
 export const internal = (message = "Erreur interne", cause?: unknown) =>
   new ApiError({ status: 500, code: "INTERNAL_ERROR", publicMessage: message, cause });
 

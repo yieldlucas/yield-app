@@ -1,27 +1,66 @@
 "use client";
 
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Camera, ChefHat, Sparkles } from "lucide-react";
+import { Bell, Camera, ChefHat, ChevronRight, Sparkles } from "lucide-react";
+
+const STEPS = [
+  { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
+  { n: "02", Icon: Sparkles, title: "L'IA lit", desc: "Chaque ligne matière est extraite et comparée à vos historiques." },
+  { n: "03", Icon: Bell, title: "Alerte rendement", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
+];
+
+const NAME_MIN = 2;
+const NAME_MAX = 80;
 
 /**
- * Modal d'accueil affiché à la 1ère visite (flag localStorage
- * `yield_onboarding_seen`). Présente le pitch en 3 étapes et un CTA
- * "Scanner mon premier BL".
+ * Modal d'accueil affichée à la 1ère visite (flag localStorage
+ * `yield_onboarding_seen`). Deux étapes :
+ *
+ *   Step 1 — Saisie du nom du restaurant. Persiste dans `profiles.restaurant_name`
+ *            via le callback onSubmitName. Le nom apparaît ensuite dans l'en-tête
+ *            des PDFs d'export. "Plus tard" passe à l'étape 2 sans sauvegarder.
+ *
+ *   Step 2 — Pitch en 3 étapes + CTA "Scanner mon premier BL".
+ *
+ * Le composant gère son state UI (saving, error), le caller fournit juste le
+ * handler de persistance et la valeur initiale (utile pour re-onboarding).
  */
 export function OnboardingModal({
   show,
   onClose,
   onStart,
+  onSubmitName,
+  initialName = "",
 }: {
   show: boolean;
   onClose: () => void;
   onStart: () => void;
+  onSubmitName: (name: string) => Promise<void>;
+  initialName?: string;
 }) {
-  const steps = [
-    { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
-    { n: "02", Icon: Sparkles, title: "L'IA lit", desc: "Chaque ligne matière est extraite et comparée à vos historiques." },
-    { n: "03", Icon: Bell, title: "Alerte rendement", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
-  ];
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState(initialName);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const trimmed = name.trim();
+  const canSubmit = trimmed.length >= NAME_MIN && trimmed.length <= NAME_MAX;
+
+  const goNext = async () => {
+    if (!canSubmit || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await onSubmitName(trimmed);
+      setStep(2);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Échec de la sauvegarde");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <AnimatePresence>
       {show && (
@@ -40,32 +79,100 @@ export function OnboardingModal({
             <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-5 glow-blue-sm">
               <ChefHat size={26} className="text-white" />
             </div>
-            <h2 className="text-slate-900 font-bold text-xl text-center mb-2">Bienvenue, chef</h2>
-            <p className="text-slate-500 text-sm text-center mb-7 leading-relaxed">
-              Scannez votre premier bon de livraison en 2 minutes. YIELD veille sur votre rendement.
-            </p>
-            <div className="space-y-4 mb-7">
-              {steps.map((s, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <div className="w-9 h-9 label-blue rounded-xl flex items-center justify-center flex-shrink-0">
-                    <s.Icon size={16} className="text-blue-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="text-slate-300 font-mono text-xs font-bold">{s.n}</span>
-                      <p className="text-slate-900 font-semibold text-sm">{s.title}</p>
+
+            {step === 1 ? (
+              <>
+                <h2 className="text-slate-900 font-bold text-xl text-center mb-2">
+                  Bienvenue, chef
+                </h2>
+                <p className="text-slate-500 text-sm text-center mb-6 leading-relaxed">
+                  Comment s&apos;appelle votre restaurant ? Ce nom apparaîtra dans l&apos;en-tête
+                  de vos exports PDF et CSV.
+                </p>
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Nom du restaurant
+                  </span>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canSubmit && !saving) void goNext();
+                    }}
+                    maxLength={NAME_MAX}
+                    placeholder="Le Café Brûlé"
+                    autoFocus
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                  />
+                </label>
+                {error && (
+                  <p className="mt-2 text-xs text-rose-500" role="alert">
+                    {error}
+                  </p>
+                )}
+                <button
+                  onClick={() => void goNext()}
+                  disabled={!canSubmit || saving}
+                  className="btn-primary w-full mt-5 py-3 rounded-xl text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {saving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Enregistrement…
+                    </>
+                  ) : (
+                    <>
+                      Continuer <ChevronRight size={15} />
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => setStep(2)}
+                  disabled={saving}
+                  className="w-full mt-2 py-2.5 text-sm text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-50"
+                >
+                  Plus tard
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-slate-900 font-bold text-xl text-center mb-2">
+                  Comment ça marche
+                </h2>
+                <p className="text-slate-500 text-sm text-center mb-7 leading-relaxed">
+                  Scannez votre premier bon de livraison en 2 minutes. YIELD veille sur votre rendement.
+                </p>
+                <div className="space-y-4 mb-7">
+                  {STEPS.map((s, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <div className="w-9 h-9 label-blue rounded-xl flex items-center justify-center flex-shrink-0">
+                        <s.Icon size={16} className="text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                          <span className="text-slate-300 font-mono text-xs font-bold">{s.n}</span>
+                          <p className="text-slate-900 font-semibold text-sm">{s.title}</p>
+                        </div>
+                        <p className="text-slate-500 text-xs leading-relaxed">{s.desc}</p>
+                      </div>
                     </div>
-                    <p className="text-slate-500 text-xs leading-relaxed">{s.desc}</p>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <button onClick={onStart} className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2">
-              <Camera size={15} /> Scanner mon premier BL
-            </button>
-            <button onClick={onClose} className="w-full mt-2 py-2.5 text-sm text-slate-400 hover:text-slate-700 transition-colors">
-              Plus tard
-            </button>
+                <button
+                  onClick={onStart}
+                  className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2"
+                >
+                  <Camera size={15} /> Scanner mon premier BL
+                </button>
+                <button
+                  onClick={onClose}
+                  className="w-full mt-2 py-2.5 text-sm text-slate-400 hover:text-slate-700 transition-colors"
+                >
+                  Plus tard
+                </button>
+              </>
+            )}
           </motion.div>
         </motion.div>
       )}

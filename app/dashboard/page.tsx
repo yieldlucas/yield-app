@@ -64,6 +64,9 @@ export default function DashboardPage() {
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
   const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
+  // Pré-remplit la modal d'onboarding si le user a déjà saisi son nom
+  // (re-onboarding manuel via /profile, ou ré-affichage forcé).
+  const [restaurantName, setRestaurantName] = useState("");
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,6 +143,38 @@ export default function DashboardPage() {
     } finally {
       setTimeout(() => setExportLoading(false), 800);
     }
+  };
+
+  /**
+   * Persiste le nom du restaurant : profiles.restaurant_name (toujours) +
+   * restaurants.name si la ligne existe déjà. Si pas encore créée (1er scan
+   * pas encore fait), le lazy-create dans /api/invoices/process la créera
+   * avec ce nom (lit profiles.restaurant_name).
+   */
+  const onSubmitRestaurantName = async (name: string): Promise<void> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Session expirée");
+    const uid = session.user.id;
+    const { error: pErr } = await supabase
+      .from("profiles")
+      .update({ restaurant_name: name })
+      .eq("id", uid);
+    if (pErr) throw new Error(pErr.message);
+
+    const { data: existing } = await supabase
+      .from("restaurants")
+      .select("id")
+      .eq("owner_id", uid)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      const { error: rErr } = await supabase
+        .from("restaurants")
+        .update({ name })
+        .eq("id", (existing as { id: string }).id);
+      if (rErr) throw new Error(rErr.message);
+    }
+    setRestaurantName(name);
   };
 
   const refreshSubscription = async (uid: string): Promise<boolean> => {
@@ -254,6 +289,14 @@ export default function DashboardPage() {
       setUserId(session.user.id);
       setLoading(false);
       void reloadUsage(); void reloadInvoices(); void reloadAlerts(); void reloadMonthlyStats();
+
+      // Pré-remplit la modal onboarding si le nom est déjà connu (réouverture
+      // manuelle après reset de yield_onboarding_seen, ou bug de navigation).
+      void supabase.from("profiles").select("restaurant_name").eq("id", session.user.id).maybeSingle()
+        .then(({ data }) => {
+          const n = (data as { restaurant_name?: string } | null)?.restaurant_name?.trim();
+          if (n) setRestaurantName(n);
+        });
 
       const subscribed = await refreshSubscription(session.user.id);
       if (typeof window === "undefined") return;
@@ -372,6 +415,13 @@ export default function DashboardPage() {
             <p className="text-slate-400 text-sm">Aucune dérive matière détectée. Votre food cost est stable.</p>
           </div>
         )}
+
+        {/* Footer mini : liens légaux discrets, exigés par Stripe + RGPD. */}
+        <footer className="pt-6 pb-2 text-center text-[11px] text-slate-300">
+          <a href="/terms" className="hover:text-slate-500 mx-2">CGU</a>
+          ·
+          <a href="/privacy" className="hover:text-slate-500 mx-2">Confidentialité</a>
+        </footer>
       </div>
 
       {/* Inputs file cachés — déclenchés par les FAB / CTA */}
@@ -409,6 +459,8 @@ export default function DashboardPage() {
         show={showOnboarding}
         onClose={dismissOnboarding}
         onStart={() => { dismissOnboarding(); openCamera(); }}
+        onSubmitName={onSubmitRestaurantName}
+        initialName={restaurantName}
       />
     </div>
   );

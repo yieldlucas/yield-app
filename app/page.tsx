@@ -1379,9 +1379,9 @@ function Footer() {
           <span>Par des chefs, pour des chefs</span>
         </div>
         <div className="flex gap-6">
-          {["CGU", "Confidentialité", "Contact"].map(link => (
-            <a key={link} href="#" className="hover:text-slate-700 transition-colors">{link}</a>
-          ))}
+          <a href="/terms" className="hover:text-slate-700 transition-colors">CGU</a>
+          <a href="/privacy" className="hover:text-slate-700 transition-colors">Confidentialité</a>
+          <a href="mailto:chef@yield.restaurant" className="hover:text-slate-700 transition-colors">Contact</a>
         </div>
         <p>© 2026 YIELD. Tous droits réservés.</p>
       </div>

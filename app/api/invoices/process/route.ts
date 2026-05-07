@@ -2,12 +2,15 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { authorizeBearer } from "@/lib/api-auth";
 import { getServiceClient } from "@/lib/supabase-admin";
 import {
+  ApiError,
   apiErrorResponse,
   badRequest,
   internal,
   paymentRequired,
+  tooManyRequests,
 } from "@/lib/api-error";
 import { logger } from "@/lib/logger";
+import { captureException } from "@/lib/error-tracking";
 
 export const runtime = "nodejs";
 // Vercel max duration : Pro = 60s, Hobby = 10s. Le scan IA peut prendre 15-25s
@@ -22,19 +25,42 @@ const TRIAL_DAYS = 14;
 /**
  * Pipeline d'ingestion d'une facture :
  *  1. Auth Bearer (cohérent avec le reste de l'API)
- *  2. Gate abonnement : trial 14j OU is_subscribed
- *  3. Restaurant lazy-create
- *  4. Réservation atomique du quota mensuel (RPC check_and_increment)
- *  5. Upload Storage + insert facture (status: pending)
- *  6. Délègue à la Supabase Edge Function en fire-and-forget
+ *  2. Rate limit burst (max 5 scans / 2 min — protection budget Anthropic)
+ *  3. Gate abonnement : trial 14j OU is_subscribed
+ *  4. Restaurant lazy-create
+ *  5. Réservation atomique du quota mensuel (RPC check_and_increment)
+ *  6. Upload Storage + insert facture (status: pending)
+ *  7. Délègue à la Supabase Edge Function en fire-and-forget
  *
- * Compensation : si le pipeline échoue après l'étape 4, on appelle
+ * Compensation : si le pipeline échoue après l'étape 5, on appelle
  * `decrement_scan_usage` pour rendre le crédit au user (le scan n'a pas
  * abouti). Voir migration 009.
  */
 export async function POST(request: NextRequest) {
+  // Capturé hors du try pour pouvoir l'inclure dans le contexte Sentry
+  // (captureException) même si l'erreur survient avant que userId soit assigné.
+  let userId: string | undefined;
+
   try {
-    const { userId, email, supabase, accessToken } = await authorizeBearer(request);
+    const bearer = await authorizeBearer(request);
+    userId = bearer.userId;
+    const { email, supabase, accessToken } = bearer;
+
+    // ─── Rate limit burst (migration 012) ───
+    // 5 scans / 2 min par user_id. Garde-fou court-terme contre le spam,
+    // distinct du quota mensuel (qui couvre la marge logique long-terme).
+    // Évalué AVANT toute autre lecture DB pour couper net les abuseurs.
+    const { data: rateLimitRow, error: rateLimitErr } = await supabase
+      .rpc("check_scan_rate_limit", { p_user_id: userId })
+      .single();
+    if (rateLimitErr) throw internal("Erreur lors de la vérification du rate limit", rateLimitErr);
+    const rl = rateLimitRow as { allowed: boolean; retry_after_seconds: number };
+    if (!rl.allowed) {
+      throw tooManyRequests(
+        "Vitesse de scan trop rapide, soufflez un peu !",
+        rl.retry_after_seconds,
+      );
+    }
 
     // ─── Gate abonnement : essai gratuit 14 jours OU is_subscribed = true ───
     const { data: profileRow } = await supabase
@@ -223,14 +249,24 @@ export async function POST(request: NextRequest) {
             // L'edge function gère elle-même son propre release sur status='error'
             // ou 'duplicate'. On ne double-release pas.
             if (res.status >= 500) {
+              // Crash côté edge function = bug à investiguer → Sentry.
+              captureException(
+                new Error(`Edge function 5xx: ${res.status}`),
+                "invoices/process/edge",
+                { invoiceId: invoice.id, userId, status: res.status, body },
+              );
               await markInvoiceFailedAndRelease(invoice.id);
             }
           }
         } catch (err) {
-          logger.error("invoices/process", "edge function fetch threw", { error: err });
           // Réseau / DNS / timeout : l'edge function n'a peut-être jamais tourné,
           // donc personne d'autre ne va marquer la facture en erreur ni libérer
-          // le crédit. À nous de le faire.
+          // le crédit. À nous de le faire — ET on Sentry-track parce que c'est
+          // typiquement un signe de panne (DNS, timeout Vercel, edge offline).
+          captureException(err, "invoices/process/edge-fetch", {
+            invoiceId: invoice.id,
+            userId,
+          });
           await markInvoiceFailedAndRelease(invoice.id);
         }
       });
@@ -248,6 +284,14 @@ export async function POST(request: NextRequest) {
       throw innerErr;
     }
   } catch (err) {
+    // Sentry track : on alerte uniquement sur les vraies exceptions (5xx ou
+    // erreurs non-gérées). Les ApiError 4xx attendues (rate limit, quota,
+    // payment required, fichier manquant…) sont du flow normal — pas la peine
+    // de réveiller quelqu'un.
+    const shouldAlert = !(err instanceof ApiError) || err.status >= 500;
+    if (shouldAlert) {
+      captureException(err, "invoices/process", userId ? { userId } : undefined);
+    }
     return apiErrorResponse(err, "invoices/process");
   }
 }
