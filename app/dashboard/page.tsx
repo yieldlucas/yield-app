@@ -22,6 +22,7 @@ import { QuotaExceededModal } from "./_components/QuotaExceededModal";
 import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { EmptyScanCTA } from "./_components/EmptyScanCTA";
+import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
 } from "./_components/SubscriptionBanners";
@@ -30,7 +31,7 @@ import { useStripeActivationPolling } from "./_hooks/useStripeActivationPolling"
 import { useInvoicesPolling } from "./_hooks/useInvoicesPolling";
 import {
   fetchUsage, fetchInvoices, invoicesChanged, fetchAlerts,
-  markAlertRead, deleteInvoice,
+  markAlertRead, deleteInvoice, fetchMonthlyStats, type MonthlyStats,
 } from "./_lib/dashboard-data";
 import { processBatch, type BatchInput } from "./_lib/process-batch";
 
@@ -61,6 +62,7 @@ export default function DashboardPage() {
   const [stack, setStack] = useState<StackItem[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>("all");
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
+  const [monthlyStats, setMonthlyStats] = useState<MonthlyStats | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
@@ -155,6 +157,7 @@ export default function DashboardPage() {
     setInvoices((prev) => (invoicesChanged(prev, next) ? next : prev));
   };
   const reloadAlerts = async () => setAlerts(await fetchAlerts());
+  const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
 
   // ─── Mutations (UI optimiste, rollback si fail) ────────────
   const dismissAlert = async (alertId: string) => {
@@ -171,7 +174,12 @@ export default function DashboardPage() {
   const dismissInvoice = async (invoiceId: string) => {
     const previous = invoices;
     setInvoices((prev) => prev.filter((i) => i.id !== invoiceId));
-    if (!(await deleteInvoice(invoiceId))) setInvoices(previous);
+    if (!(await deleteInvoice(invoiceId))) {
+      setInvoices(previous);
+      return;
+    }
+    // Suppression réussie → le total mensuel doit être recalculé.
+    void reloadMonthlyStats();
   };
 
   // ─── Stack (IDB persistant) ────────────────────────────────
@@ -212,7 +220,11 @@ export default function DashboardPage() {
         setPaymentRequired(true);
         setTimeout(() => { void startCheckout(); }, 600);
       },
-      onBatchFinished: () => { void reloadInvoices(); void reloadAlerts(); },
+      onBatchFinished: () => {
+        void reloadInvoices();
+        void reloadAlerts();
+        void reloadMonthlyStats();
+      },
     });
 
   const sendStack = () => {
@@ -241,7 +253,7 @@ export default function DashboardPage() {
       setUser({ email: session.user.email ?? "" });
       setUserId(session.user.id);
       setLoading(false);
-      void reloadUsage(); void reloadInvoices(); void reloadAlerts();
+      void reloadUsage(); void reloadInvoices(); void reloadAlerts(); void reloadMonthlyStats();
 
       const subscribed = await refreshSubscription(session.user.id);
       if (typeof window === "undefined") return;
@@ -334,6 +346,9 @@ export default function DashboardPage() {
           <TrialBanner show={showTrial} loading={checkoutLoading} onStart={startCheckout} onDismiss={dismissTrial} />
         )}
         <BillingErrorBanner message={billingError} onRefresh={refreshBilling} onDismiss={() => setBillingError(null)} />
+
+        {/* KPIs synthétiques du mois — caché tant qu'aucune facture processed. */}
+        <MonthlyStatsStrip stats={monthlyStats} alertsCount={alerts.length} />
 
         {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
 

@@ -10,6 +10,59 @@ import { type Alert, type RecentInvoice } from "../_components/types";
 const RECENT_INVOICES_LIMIT = 30;
 const UNREAD_ALERTS_LIMIT = 10;
 
+export type MonthlyStats = {
+  /** Somme des total_ht (HT €) des factures processed du mois courant. */
+  totalHt: number;
+  /** Moyenne pondérée par total_ht des variation_pct du mois.
+   *  Chaque variation_pct est elle-même calculée par l'edge function en
+   *  comparant aux prix précédents de l'historique. NULL si aucune facture
+   *  comparable (premier mois, ou aucun produit déjà scanné précédemment). */
+  weightedVariationPct: number | null;
+  /** Nombre de factures processed ce mois (utile pour conditionner l'affichage). */
+  invoicesCount: number;
+};
+
+/**
+ * Stats agrégées du mois courant pour le strip KPIs du dashboard.
+ * Une seule requête SELECT (pas de RPC), RLS owner_invoices applique le scope.
+ */
+export async function fetchMonthlyStats(): Promise<MonthlyStats> {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .slice(0, 10);
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("total_ht, variation_pct")
+    .eq("status", "processed")
+    .gte("invoice_date", monthStart);
+
+  const empty: MonthlyStats = { totalHt: 0, weightedVariationPct: null, invoicesCount: 0 };
+  if (error || !data) return empty;
+
+  type Row = { total_ht: number | null; variation_pct: number | null };
+  const rows = data as unknown as Row[];
+
+  let totalHt = 0;
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (const r of rows) {
+    const ht = Number(r.total_ht ?? 0);
+    totalHt += ht;
+    // On pondère par total_ht : un BL de 5000€ pèse 100x plus qu'un BL de 50€.
+    // Évite qu'une grosse hausse sur un mini-BL fasse exploser la moyenne.
+    if (r.variation_pct != null && ht > 0) {
+      weightedSum += Number(r.variation_pct) * ht;
+      weightTotal += ht;
+    }
+  }
+  return {
+    totalHt,
+    weightedVariationPct: weightTotal > 0 ? weightedSum / weightTotal : null,
+    invoicesCount: rows.length,
+  };
+}
+
 /** Lit le compteur de scans du mois courant (RLS owner_read_usage). */
 export async function fetchUsage(quota: number): Promise<{ used: number; quota: number }> {
   const yearMonth = new Date().toISOString().slice(0, 7);
