@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Calculator, Plus, RotateCcw, Search, Sparkles, Trash2, X,
+  BookmarkPlus, Calculator, Plus, RotateCcw, Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import {
   searchProductsWithLastPrice,
   type ProductWithLastPrice,
 } from "../_lib/dashboard-data";
+import { createRecipe, type IngredientInput } from "../_lib/recipes-data";
 
 // ─── Constantes métier ───────────────────────────────────
 // Règle d'or restauration française : food cost à 30%, soit un coefficient
@@ -126,9 +128,16 @@ export function FlashCalculator({
   /** Pré-remplit la liste d'ingrédients (ex: ouverture depuis une facture). */
   initialIngredients?: CalculatorInitialIngredient[];
 }) {
+  const router = useRouter();
   const [ingredients, setIngredients] = useState<Ingredient[]>([makeEmpty()]);
   const [priceTtc, setPriceTtc] = useState<number | null>(null);
   const [vatRate, setVatRate] = useState<number>(DEFAULT_VAT);
+  // Persistance Mes Recettes : ouvre une mini-modal pour saisir le nom puis
+  // crée la recette via createRecipe(). Redirige vers le détail au succès.
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [recipeName, setRecipeName] = useState("");
+  const [savingRecipe, setSavingRecipe] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Re-seed la liste à chaque ouverture (sinon une 2e ouverture montrerait
   // l'ancien état). Quand pas de seed, on amorce avec 1 ligne brouillon.
@@ -196,6 +205,57 @@ export function FlashCalculator({
   const applySuggestedPrice = () => {
     if (calc.suggestedTtc != null) {
       setPriceTtc(Math.round(calc.suggestedTtc * 100) / 100);
+    }
+  };
+
+  /** Au moins une ligne valorisée + nom non vide = save autorisé.
+   *  Le prix de vente est OPTIONNEL — l'user peut sauvegarder une recette
+   *  brouillon (il fixera son prix de vente plus tard depuis le détail). */
+  const canSaveRecipe = calc.countValid > 0;
+
+  const submitSave = async () => {
+    const name = recipeName.trim();
+    if (name.length < 2) {
+      setSaveError("Donnez un nom à votre recette (2 caractères min)");
+      return;
+    }
+    setSavingRecipe(true);
+    setSaveError(null);
+    try {
+      const payload: IngredientInput[] = ingredients
+        .filter((i) => i.pricePerUnitHt != null && i.quantity > 0 && i.name.trim() !== "")
+        .map((i) => ({
+          productId: i.productId,
+          label: i.name.trim(),
+          unit: i.unit || i.quantityUnit,
+          quantity: i.quantity,
+          quantityUnit: i.quantityUnit || i.unit,
+          productUnit: i.unit || i.quantityUnit,
+          // Si l'ingrédient n'a pas de productId (saisi à la main, hors catalogue),
+          // on stocke le prix entré en manual_price_ht pour qu'il survive aux scans.
+          manualPriceHt: i.productId == null ? i.pricePerUnitHt : null,
+          // Toujours snapshot le prix au moment du save → permet le drift par ligne.
+          baselinePriceHt: i.pricePerUnitHt,
+        }));
+      const id = await createRecipe({
+        name,
+        sellingPriceTtc: priceTtc,
+        vatRate,
+        ingredients: payload,
+      });
+      if (!id) {
+        setSaveError("Échec de la sauvegarde — vérifiez votre connexion");
+        setSavingRecipe(false);
+        return;
+      }
+      setSaveOpen(false);
+      setRecipeName("");
+      setSavingRecipe(false);
+      onClose();
+      router.push(`/dashboard/recipes/${id}`);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Erreur inconnue");
+      setSavingRecipe(false);
     }
   };
 
@@ -326,6 +386,17 @@ export function FlashCalculator({
                   : `Suggérer ${fmtEuros(calc.suggestedTtc)} TTC (coefficient 3,3)`}
               </button>
 
+              {/* ── Persistance Mes Recettes ── */}
+              <button
+                onClick={() => setSaveOpen(true)}
+                disabled={!canSaveRecipe}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold border border-blue-200 text-blue-700 hover:bg-blue-50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                title={canSaveRecipe ? "Suit la rentabilité de ce plat à chaque nouveau scan" : "Ajoutez au moins un ingrédient valorisé"}
+              >
+                <BookmarkPlus size={15} />
+                Enregistrer comme recette
+              </button>
+
               {/* ── Détail marge + jauge ── */}
               <div className={`rounded-2xl border p-4 space-y-3 transition-colors ${marginBgTone}`}>
                 <Row label="Prix de vente HT" value={fmtEuros(calc.sellingHt)} />
@@ -387,6 +458,76 @@ export function FlashCalculator({
               </div>
             </div>
           </motion.div>
+
+          {/* ── Mini-modal "Enregistrer comme recette" ── */}
+          {saveOpen && (
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] flex items-center justify-center p-5 bg-slate-900/60 backdrop-blur-sm"
+              onClick={() => !savingRecipe && setSaveOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 12 }} animate={{ scale: 1, y: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <BookmarkPlus size={18} className="text-blue-600" />
+                  <h3 className="text-slate-900 font-bold text-base">Enregistrer la recette</h3>
+                </div>
+                <p className="text-slate-500 text-sm mb-4 leading-relaxed">
+                  Yield suivra automatiquement la rentabilité de ce plat à chaque
+                  nouveau scan de facture.
+                </p>
+                <label className="block">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Nom de la recette
+                  </span>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={recipeName}
+                    onChange={(e) => setRecipeName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") void submitSave(); }}
+                    placeholder="ex: Tartare de bœuf, frites maison"
+                    maxLength={120}
+                    className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+                  />
+                </label>
+                {priceTtc == null && (
+                  <p className="mt-2 text-[11px] text-amber-600">
+                    Aucun prix de vente saisi — vous le fixerez plus tard depuis le détail.
+                  </p>
+                )}
+                {saveError && (
+                  <p className="mt-2 text-xs text-rose-600" role="alert">{saveError}</p>
+                )}
+                <div className="flex gap-2 mt-5">
+                  <button
+                    onClick={() => setSaveOpen(false)}
+                    disabled={savingRecipe}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={() => void submitSave()}
+                    disabled={savingRecipe || recipeName.trim().length < 2}
+                    className="btn-primary flex-1 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+                  >
+                    {savingRecipe ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Sauvegarde…
+                      </>
+                    ) : (
+                      "Enregistrer"
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
         </>
       )}
     </AnimatePresence>

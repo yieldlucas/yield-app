@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Calculator, ChefHat, Download, Settings, User } from "lucide-react";
+import { Calculator, ChefHat, Download, Salad, Settings, User } from "lucide-react";
 import { NotificationsBell } from "./NotificationsBell";
 import { type Alert } from "./types";
 
@@ -90,6 +90,14 @@ export function DashboardHeader({
             <Calculator size={14} />
             <span className="hidden sm:inline whitespace-nowrap">Calculateur</span>
           </button>
+          <Link
+            href="/dashboard/recipes"
+            className="text-slate-400 hover:text-blue-600 transition-colors"
+            aria-label="Mes recettes"
+            title="Mes recettes"
+          >
+            <Salad size={18} />
+          </Link>
           <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
           <Link
             href="/dashboard/profile"

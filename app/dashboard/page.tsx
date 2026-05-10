@@ -24,6 +24,7 @@ import { DashboardHeader } from "./_components/DashboardHeader";
 import { EmptyScanCTA } from "./_components/EmptyScanCTA";
 import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
 import { CalculatorCard } from "./_components/CalculatorCard";
+import { CardHealthWidget } from "./_components/CardHealthWidget";
 import { FlashCalculator } from "./_components/FlashCalculator";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
@@ -403,6 +404,11 @@ export default function DashboardPage() {
             haute pour donner à l'outil la place qu'il mérite (au-dessus des
             scans). État ouvert/fermé géré ici, partagé avec le bouton header. */}
         <CalculatorCard onOpen={() => setCalcOpen(true)} />
+
+        {/* Widget Santé de votre Carte — caché tant qu'aucune recette n'est
+            enregistrée. Pas de notif intempestive : info latente, on creuse à
+            la demande via /dashboard/recipes. */}
+        <CardHealthWidget />
 
         {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
 
