@@ -258,10 +258,11 @@ export function FlashCalculator({
         vatRate,
         ingredients: payload,
       });
+      // createRecipe throw en cas d'erreur (le catch attrape) ; un retour null
+      // ne peut survenir que si une garde silencieuse échoue côté lib — par
+      // sécurité on continue de gérer le cas.
       if (!id) {
-        setSaveError("Échec de la sauvegarde — vérifiez votre connexion");
-        setSavingRecipe(false);
-        return;
+        throw new Error("Sauvegarde impossible — réessayez ou contactez le support");
       }
       setSaveOpen(false);
       setRecipeName("");
@@ -384,9 +385,10 @@ export function FlashCalculator({
                   <input
                     type="number" inputMode="decimal" step="0.01" min={0}
                     value={priceTtc ?? ""}
+                    onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
-                      setPriceTtc(Number.isFinite(v) ? v : null);
+                      setPriceTtc(Number.isFinite(v) && v > 0 ? v : null);
                     }}
                     placeholder="0,00"
                     className="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
@@ -702,8 +704,12 @@ function IngredientRow({
           </label>
           <input
             type="number" inputMode="decimal" step="0.01" min={0}
-            value={Number.isFinite(ingredient.quantity) ? ingredient.quantity : ""}
-            onChange={(e) => onChange({ quantity: parseFloat(e.target.value) || 0 })}
+            value={ingredient.quantity > 0 ? ingredient.quantity : ""}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              onChange({ quantity: Number.isFinite(v) && v > 0 ? v : 0 });
+            }}
             placeholder="0"
             className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
           />

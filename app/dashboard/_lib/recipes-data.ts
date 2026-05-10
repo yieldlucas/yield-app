@@ -134,21 +134,49 @@ export type RecipeInput = {
  * au moment de la sauvegarde) côté client à partir des prix utilisés — pas de
  * round-trip après l'insert pour relire la vue.
  *
- * Retourne l'id de la recette créée. RLS scope tout au restaurant courant.
+ * Lazy-create du restaurant si l'user n'en a pas encore (cas d'un nouveau
+ * compte qui crée sa 1ère recette avant son 1er scan). Le nom du restaurant
+ * vient de profiles.restaurant_name (saisi à l'onboarding) ou d'un fallback.
+ *
+ * Throw une `Error` avec un message lisible si l'insert échoue — le caller
+ * (FlashCalculator) l'affiche tel quel dans la modal.
  */
 export async function createRecipe(input: RecipeInput): Promise<string | null> {
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return null;
-  const { data: restaurant } = await supabase
+  if (!session) throw new Error("Session expirée");
+  const userId = session.user.id;
+
+  // 1. Récupère ou crée le restaurant. NB : pas de colonne vat_rate sur cette
+  //    table (la TVA vit sur recipes), donc on ne sélectionne que id.
+  let restaurantId: string | undefined;
+  const { data: existing, error: lookupErr } = await supabase
     .from("restaurants")
-    .select("id, vat_rate")
-    .eq("owner_id", session.user.id)
+    .select("id")
+    .eq("owner_id", userId)
     .limit(1)
     .maybeSingle();
-  const restaurantId = (restaurant as { id?: string } | null)?.id;
-  if (!restaurantId) return null;
+  if (lookupErr) throw new Error(`Lecture restaurant impossible : ${lookupErr.message}`);
+  restaurantId = (existing as { id?: string } | null)?.id;
 
-  // Baseline = somme des sous-totaux à la date du save, avec conversion d'unités.
+  if (!restaurantId) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("restaurant_name")
+      .eq("id", userId)
+      .maybeSingle();
+    const restName = ((profile as { restaurant_name?: string } | null)?.restaurant_name ?? "").trim() || "Mon restaurant";
+    const { data: newRest, error: createErr } = await supabase
+      .from("restaurants")
+      .insert({ owner_id: userId, name: restName })
+      .select("id")
+      .single();
+    if (createErr || !newRest) {
+      throw new Error(`Création restaurant impossible : ${createErr?.message ?? "réponse vide"}`);
+    }
+    restaurantId = (newRest as { id: string }).id;
+  }
+
+  // 2. Baseline = somme des sous-totaux à la date du save, avec conversion d'unités.
   const baselineCostHt = computeBaseline(input.ingredients);
 
   const { data: recipeRow, error: rErr } = await supabase
@@ -164,7 +192,9 @@ export async function createRecipe(input: RecipeInput): Promise<string | null> {
     })
     .select("id")
     .single();
-  if (rErr || !recipeRow) return null;
+  if (rErr || !recipeRow) {
+    throw new Error(`Insert recette : ${rErr?.message ?? "réponse vide"} — vérifiez que la migration 014 est bien appliquée.`);
+  }
   const recipeId = (recipeRow as { id: string }).id;
 
   if (input.ingredients.length > 0) {
@@ -175,17 +205,18 @@ export async function createRecipe(input: RecipeInput): Promise<string | null> {
         product_id: ing.productId,
         label: ing.label,
         quantity: ing.quantity,
-        unit: ing.unit || ing.productUnit || ing.quantityUnit,
-        quantity_unit: ing.quantityUnit,
-        product_unit: ing.productUnit,
+        unit: ing.unit || ing.productUnit || ing.quantityUnit || "u",
+        quantity_unit: ing.quantityUnit || ing.productUnit || ing.unit || "u",
+        product_unit: ing.productUnit || ing.unit || ing.quantityUnit || "u",
         manual_price_ht: ing.manualPriceHt,
         baseline_price_ht: ing.baselinePriceHt,
         position: idx,
       })));
     if (iErr) {
-      // Rollback best-effort : on supprime la recette si les ingrédients ont échoué.
+      // Rollback best-effort : on supprime la recette si les ingrédients ont
+      // échoué (RLS owner_recipes autorise le delete, on est sur la même session).
       await supabase.from("recipes").delete().eq("id", recipeId);
-      return null;
+      throw new Error(`Insert ingrédients : ${iErr.message}`);
     }
   }
   return recipeId;

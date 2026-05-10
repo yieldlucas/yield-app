@@ -295,6 +295,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
                 <input
                   type="number" inputMode="decimal" step="0.01" min={0}
                   value={draftPrice}
+                  onFocus={(e) => e.currentTarget.select()}
                   onChange={(e) => setDraftPrice(e.target.value)}
                   placeholder="0,00 € TTC"
                   className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200"
@@ -443,6 +444,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
             <input
               type="number" inputMode="decimal" step="0.01" min={0}
               value={manualValue}
+              onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => setManualValue(e.target.value)}
               placeholder="0,00 € HT / unité produit"
               autoFocus
@@ -580,8 +582,13 @@ function IngredientLine({
           </label>
           <input
             type="number" inputMode="decimal" step="0.01" min={0}
-            value={Number.isFinite(draftQty) ? draftQty : ""}
-            onChange={(e) => onChangeQty(parseFloat(e.target.value) || 0)}
+            value={draftQty > 0 ? draftQty : ""}
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => {
+              const v = parseFloat(e.target.value);
+              onChangeQty(Number.isFinite(v) && v > 0 ? v : 0);
+            }}
+            placeholder="0"
             className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200"
           />
         </div>
