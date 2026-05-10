@@ -225,6 +225,54 @@ export async function searchProductsWithLastPrice(
   }));
 }
 
+export type InvoiceLineForCalc = {
+  productId: string | null;
+  name: string;
+  unit: string;
+  pricePerUnitHt: number | null;
+  quantity: number;
+  quantityUnit: string;
+};
+
+/**
+ * Lit les lignes d'une facture pour pré-remplir le FlashCalculator. Utilisé
+ * par le raccourci "Créer une recette depuis cette facture" — chaque ligne
+ * devient un ingrédient.
+ *
+ * Les lignes sans prix unitaire sont filtrées (inutilisables dans le
+ * calcul de marge). Limité à 12 lignes pour ne pas faire exploser la modale —
+ * une recette typique a 3-8 ingrédients, au-delà l'user retire ce qu'il ne
+ * veut pas plutôt que d'avoir 30 lignes pré-remplies.
+ */
+export async function fetchInvoiceLinesForCalc(
+  invoiceId: string,
+  maxLines = 12,
+): Promise<InvoiceLineForCalc[]> {
+  const { data, error } = await supabase
+    .from("invoice_items")
+    .select("product_id, raw_label, quantity, unit, unit_price_ht")
+    .eq("invoice_id", invoiceId)
+    .limit(maxLines);
+  if (error || !data) return [];
+  type Row = {
+    product_id: string | null;
+    raw_label: string;
+    quantity: number | null;
+    unit: string | null;
+    unit_price_ht: number | null;
+  };
+  return (data as unknown as Row[])
+    .filter((r) => r.unit_price_ht != null && Number(r.unit_price_ht) > 0)
+    .map((r) => ({
+      productId: r.product_id,
+      name: r.raw_label,
+      unit: r.unit ?? "",
+      pricePerUnitHt: r.unit_price_ht == null ? null : Number(r.unit_price_ht),
+      quantity: r.quantity == null ? 1 : Number(r.quantity),
+      quantityUnit: r.unit ?? "",
+    }));
+}
+
 /**
  * Supprime une facture et son fichier dans Storage.
  * Récupère `image_path` AVANT le delete (sinon RLS bloquerait la lecture

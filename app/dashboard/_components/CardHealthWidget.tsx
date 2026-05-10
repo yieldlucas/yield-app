@@ -21,7 +21,7 @@ export function CardHealthWidget() {
   }, []);
 
   // Avant chargement OU si l'user n'a aucune recette : on cache. Pas de bruit
-  // visuel inutile — la CalculatorCard juste au-dessus invite déjà à créer.
+  // visuel inutile — le DashboardHero juste au-dessus invite déjà à créer.
   if (!stats || stats.total === 0) return null;
 
   const attention = stats.critical + stats.warning;

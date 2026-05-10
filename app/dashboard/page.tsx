@@ -23,9 +23,11 @@ import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { EmptyScanCTA } from "./_components/EmptyScanCTA";
 import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
-import { CalculatorCard } from "./_components/CalculatorCard";
 import { CardHealthWidget } from "./_components/CardHealthWidget";
-import { FlashCalculator } from "./_components/FlashCalculator";
+import { DashboardHero } from "./_components/DashboardHero";
+import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
+import { fetchRecipesHealth } from "./_lib/recipes-data";
+import { fetchInvoiceLinesForCalc } from "./_lib/dashboard-data";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
 } from "./_components/SubscriptionBanners";
@@ -70,9 +72,16 @@ export default function DashboardPage() {
   // Pré-remplit la modal d'onboarding si le user a déjà saisi son nom
   // (re-onboarding manuel via /profile, ou ré-affichage forcé).
   const [restaurantName, setRestaurantName] = useState("");
-  // Calculatrice de marge : state remonté ici pour que le bouton header ET la
-  // CalculatorCard du body puissent partager le même drawer.
+  // Calculatrice de marge : state remonté ici pour que le header, le hero et
+  // les cards facture puissent partager le même drawer.
   const [calcOpen, setCalcOpen] = useState(false);
+  // Si non null, pré-remplit la calculatrice à l'ouverture (raccourci
+  // "Créer une recette depuis cette facture"). Reset à la fermeture.
+  const [calcSeed, setCalcSeed] = useState<CalculatorInitialIngredient[] | null>(null);
+  // Stats des recettes pour le sous-texte du DashboardHero (Card B).
+  const [recipesStats, setRecipesStats] = useState<{
+    total: number; critical: number; warning: number;
+  } | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,6 +208,26 @@ export default function DashboardPage() {
   };
   const reloadAlerts = async () => setAlerts(await fetchAlerts());
   const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
+  const reloadRecipesStats = async () => setRecipesStats(await fetchRecipesHealth());
+
+  // Ouvre la calculatrice pré-remplie avec les lignes d'une facture donnée.
+  // Trigger raccourci "Créer une recette depuis cette facture".
+  const createRecipeFromInvoice = async (invoiceId: string) => {
+    const lines = await fetchInvoiceLinesForCalc(invoiceId);
+    if (lines.length === 0) {
+      setCalcSeed(null);
+    } else {
+      setCalcSeed(lines.map<CalculatorInitialIngredient>((l) => ({
+        productId: l.productId ?? undefined,
+        name: l.name,
+        unit: l.unit,
+        pricePerUnitHt: l.pricePerUnitHt,
+        quantity: l.quantity,
+        quantityUnit: l.quantityUnit,
+      })));
+    }
+    setCalcOpen(true);
+  };
 
   // ─── Mutations (UI optimiste, rollback si fail) ────────────
   const dismissAlert = async (alertId: string) => {
@@ -294,7 +323,8 @@ export default function DashboardPage() {
       setUser({ email: session.user.email ?? "" });
       setUserId(session.user.id);
       setLoading(false);
-      void reloadUsage(); void reloadInvoices(); void reloadAlerts(); void reloadMonthlyStats();
+      void reloadUsage(); void reloadInvoices(); void reloadAlerts();
+      void reloadMonthlyStats(); void reloadRecipesStats();
 
       // Pré-remplit la modal onboarding si le nom est déjà connu (réouverture
       // manuelle après reset de yield_onboarding_seen, ou bug de navigation).
@@ -400,14 +430,18 @@ export default function DashboardPage() {
         {/* KPIs synthétiques du mois — caché tant qu'aucune facture processed. */}
         <MonthlyStatsStrip stats={monthlyStats} alertsCount={alerts.length} />
 
-        {/* Carte d'entrée vers la calculatrice — toujours visible, position
-            haute pour donner à l'outil la place qu'il mérite (au-dessus des
-            scans). État ouvert/fermé géré ici, partagé avec le bouton header. */}
-        <CalculatorCard onOpen={() => setCalcOpen(true)} />
+        {/* Hero : deux faces de Yield mises en parallèle (Le Moteur = scans,
+            Le Pilote = recettes). Card B redirige vers /dashboard/recipes si
+            l'user a déjà des recettes, ou ouvre direct la calculatrice sinon. */}
+        <DashboardHero
+          onScan={openCamera}
+          onCreateRecipe={() => { setCalcSeed(null); setCalcOpen(true); }}
+          recipesCount={recipesStats?.total ?? 0}
+          recipesAttention={(recipesStats?.critical ?? 0) + (recipesStats?.warning ?? 0)}
+        />
 
         {/* Widget Santé de votre Carte — caché tant qu'aucune recette n'est
-            enregistrée. Pas de notif intempestive : info latente, on creuse à
-            la demande via /dashboard/recipes. */}
+            enregistrée. Détaille la santé sous le Hero quand pertinent. */}
         <CardHealthWidget />
 
         {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
@@ -422,6 +456,7 @@ export default function DashboardPage() {
             onOpenCamera={openCamera} onOpenGallery={openGallery}
             onInvoiceClick={(id) => router.push(`/dashboard/invoices/${id}`)}
             onInvoiceDismiss={dismissInvoice}
+            onCreateRecipeFromInvoice={(id) => { void createRecipeFromInvoice(id); }}
           />
         )}
 
@@ -480,7 +515,11 @@ export default function DashboardPage() {
         onSubmitName={onSubmitRestaurantName}
         initialName={restaurantName}
       />
-      <FlashCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
+      <FlashCalculator
+        open={calcOpen}
+        onClose={() => { setCalcOpen(false); setCalcSeed(null); }}
+        initialIngredients={calcSeed ?? undefined}
+      />
     </div>
   );
 }

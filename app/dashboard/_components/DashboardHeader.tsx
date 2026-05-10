@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Calculator, ChefHat, Download, Salad, Settings, User } from "lucide-react";
+import {
+  Calculator, ChefHat, Download, HelpCircle, Salad, Settings, User,
+} from "lucide-react";
 import { NotificationsBell } from "./NotificationsBell";
 import { type Alert } from "./types";
 
@@ -14,7 +16,7 @@ import { type Alert } from "./types";
  * alertes. Voir NotificationsBell.
  *
  * Le bouton calculatrice ne porte plus son propre état : on délègue
- * l'ouverture au parent (dashboard/page.tsx) pour que la CalculatorCard du
+ * l'ouverture au parent (dashboard/page.tsx) pour que le DashboardHero du
  * body puisse partager le même drawer.
  */
 export function DashboardHeader({
@@ -99,6 +101,14 @@ export function DashboardHeader({
             <Salad size={18} />
           </Link>
           <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
+          <Link
+            href="/how-it-works"
+            className="text-slate-400 hover:text-blue-600 transition-colors hidden sm:inline-flex"
+            aria-label="Comment ça marche"
+            title="Comment ça marche"
+          >
+            <HelpCircle size={18} />
+          </Link>
           <Link
             href="/dashboard/profile"
             className="text-slate-400 hover:text-blue-600 transition-colors"

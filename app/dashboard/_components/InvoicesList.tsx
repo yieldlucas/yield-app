@@ -19,6 +19,7 @@ export function InvoicesList({
   onOpenGallery,
   onInvoiceClick,
   onInvoiceDismiss,
+  onCreateRecipeFromInvoice,
 }: {
   invoices: RecentInvoice[];
   filter: InvoiceFilter;
@@ -27,6 +28,8 @@ export function InvoicesList({
   onOpenGallery: () => void;
   onInvoiceClick: (id: string) => void;
   onInvoiceDismiss: (id: string) => void;
+  /** Optionnel — affiche un raccourci "Créer une recette" sur chaque BL processed. */
+  onCreateRecipeFromInvoice?: (id: string) => void;
 }) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -104,6 +107,11 @@ export function InvoicesList({
               inv={inv}
               onClick={inv.status === "processed" ? () => onInvoiceClick(inv.id) : undefined}
               onDismiss={() => onInvoiceDismiss(inv.id)}
+              onCreateRecipe={
+                onCreateRecipeFromInvoice && inv.status === "processed"
+                  ? () => onCreateRecipeFromInvoice(inv.id)
+                  : undefined
+              }
             />
           ))
         )}

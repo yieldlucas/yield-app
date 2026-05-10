@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { ChefHat, X } from "lucide-react";
 import { type RecentInvoice, VARIATION_ALERT_PCT } from "./types";
 
 /**
@@ -64,10 +64,14 @@ export function InvoiceCard({
   inv,
   onClick,
   onDismiss,
+  onCreateRecipe,
 }: {
   inv: RecentInvoice;
   onClick?: () => void;
   onDismiss?: () => void;
+  /** Si fourni, affiche un bouton "Créer une recette" sur les factures
+   *  processed — ouvre la calculatrice pré-remplie avec les lignes du BL. */
+  onCreateRecipe?: () => void;
 }) {
   const isProcessing = inv.status === "processing" || inv.status === "pending";
   const isError = inv.status === "error";
@@ -146,6 +150,30 @@ export function InvoiceCard({
             animate={{ width: ["10%", "55%", "85%", "10%"] }}
             transition={{ repeat: Infinity, duration: 2.4, ease: "easeInOut" }}
           />
+        </div>
+      )}
+      {/* Footer micro-action : transformer cette facture en composition recette.
+          Affiché uniquement quand la facture est processed (sinon pas de lignes
+          exploitables) et que le caller a fourni un handler. */}
+      {onCreateRecipe && !isProcessing && !isError && !isDuplicate && (
+        <div className="mt-3 pt-3 border-t border-slate-100 flex justify-end">
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={(e) => { e.stopPropagation(); onCreateRecipe(); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                e.preventDefault();
+                onCreateRecipe();
+              }
+            }}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors cursor-pointer select-none"
+            title="Composer une recette à partir de ces lignes"
+          >
+            <ChefHat size={11} />
+            Créer une recette
+          </span>
         </div>
       )}
     </>

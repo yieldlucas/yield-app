@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  BookmarkPlus, Calculator, Plus, RotateCcw, Search, Sparkles, Trash2, X,
+  BookmarkPlus, Calculator, Lightbulb, Plus, RotateCcw, ScanLine,
+  Search, Sparkles, Trash2, X,
 } from "lucide-react";
 import {
   searchProductsWithLastPrice,
@@ -213,6 +214,12 @@ export function FlashCalculator({
    *  brouillon (il fixera son prix de vente plus tard depuis le détail). */
   const canSaveRecipe = calc.countValid > 0;
 
+  // Au moins une ligne saisie hors catalogue (productId null + name + price) :
+  // on suggère discrètement à l'user de scanner pour automatiser la mise à jour.
+  const hasManualEntry = ingredients.some(
+    (i) => i.productId == null && i.name.trim() !== "" && i.pricePerUnitHt != null,
+  );
+
   const submitSave = async () => {
     const name = recipeName.trim();
     if (name.length < 2) {
@@ -327,6 +334,23 @@ export function FlashCalculator({
                   <Plus size={14} /> Ajouter un ingrédient
                 </button>
               </div>
+
+              {/* ── InfoTip : encourage à scanner si saisie manuelle ── */}
+              {hasManualEntry && (
+                <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 flex items-start gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
+                    <Lightbulb size={13} className="text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0 text-[12px] leading-relaxed text-slate-600">
+                    <strong className="text-slate-900">Astuce.</strong>{" "}
+                    Scannez vos factures pour que ce prix se mette à jour tout seul
+                    à chaque livraison.
+                    <span className="inline-flex items-center gap-1 ml-1 text-blue-700 font-semibold">
+                      <ScanLine size={11} /> Scanner un BL
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* ── Coût de revient total ── */}
               <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
