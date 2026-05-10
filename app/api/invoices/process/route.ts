@@ -17,8 +17,9 @@ export const runtime = "nodejs";
 // par BL, donc on autorise jusqu'à 60s pour rester safe sur Pro.
 export const maxDuration = 60;
 
-// Quota mensuel inclus dans l'offre lancement (19.99€). Au-delà : prompt
-// d'upgrade vers Pro 39.99€ (quota plus élevé). Voir migration 005.
+// Quota mensuel inclus dans l'offre Lancement (19,99 € HT). Le compteur se
+// réinitialise au 1er du mois (RPC check_and_increment_scan_usage). Un futur
+// forfait Pro (illimité + comptabilité) est en préparation. Voir migration 005.
 const MONTHLY_SCAN_QUOTA = 200;
 const TRIAL_DAYS = 14;
 
@@ -150,7 +151,7 @@ export async function POST(request: NextRequest) {
     const quota = quotaRow as { allowed: boolean; used: number; quota: number };
     if (!quota.allowed) {
       throw paymentRequired(
-        `Vous avez utilisé l'intégralité de votre forfait mensuel (${quota.quota} scans). Pour continuer à scanner ce mois-ci et débloquer les fonctions Business Intelligence, passez au forfait Pro à 39,99€/mois.`,
+        `Vous avez utilisé l'intégralité de votre forfait mensuel (${quota.quota} scans). Le compteur sera réinitialisé le 1er du mois prochain. Un forfait Pro illimité + espace comptable est en préparation.`,
         "QUOTA_EXCEEDED",
         { quota: quota.quota, used: quota.used },
       );

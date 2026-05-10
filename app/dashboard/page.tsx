@@ -514,7 +514,7 @@ export default function DashboardPage() {
           />
         )}
       </AnimatePresence>
-      <QuotaExceededModal open={quotaExceeded} quota={QUOTA} onClose={() => setQuotaExceeded(false)} onCheckout={startCheckout} />
+      <QuotaExceededModal open={quotaExceeded} quota={QUOTA} onClose={() => setQuotaExceeded(false)} />
       <ConciergeButton />
       <BatchOverlay
         items={batch} open={batchOpen}

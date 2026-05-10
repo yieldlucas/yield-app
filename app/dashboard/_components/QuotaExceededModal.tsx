@@ -1,24 +1,25 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { CalendarClock, Mail, Sparkles } from "lucide-react";
 
 /**
- * Modal d'upsell quand le quota mensuel est atteint. Pas un blocage strict
- * (le user n'est pas en dette), juste une invitation à passer au Pro.
- * Cliquer en dehors ou sur "Plus tard" la ferme. "Découvrir le Pro" déclenche
- * un Stripe Checkout vers le plan supérieur.
+ * Modal d'information quand le quota mensuel (Lancement = 200 scans) est
+ * atteint. Pas de blocage strict : le user voit que le compteur se réinitialise
+ * au 1er du mois prochain, et qu'un forfait Pro illimité est en préparation.
+ *
+ * Le forfait Pro n'étant pas encore wired dans Stripe, on n'expose pas de
+ * bouton de checkout — un mailto permet de manifester son intérêt et d'être
+ * prévenu en avant-première lors de l'ouverture du Pro.
  */
 export function QuotaExceededModal({
   open,
   quota,
   onClose,
-  onCheckout,
 }: {
   open: boolean;
   quota: number;
   onClose: () => void;
-  onCheckout: () => void;
 }) {
   if (!open) return null;
   return (
@@ -40,35 +41,43 @@ export function QuotaExceededModal({
         <h2 className="text-slate-900 font-bold text-lg mb-2">
           Vous scannez beaucoup — bravo !
         </h2>
-        <p className="text-slate-600 text-sm leading-relaxed mb-2">
-          Vous avez utilisé vos <strong>{quota} scans</strong> inclus dans le forfait Lancement ce mois-ci.
-          C&apos;est le signe d&apos;une cuisine très active.
+        <p className="text-slate-600 text-sm leading-relaxed mb-4">
+          Vous avez utilisé vos <strong>{quota} scans</strong> inclus dans le forfait Lancement
+          ce mois-ci. C&apos;est le signe d&apos;une cuisine très active.
         </p>
-        <p className="text-slate-600 text-sm leading-relaxed mb-5">
-          Pour continuer à scanner sans limite jusqu&apos;à la fin du mois et débloquer les outils Business
-          Intelligence (détection d&apos;écarts fournisseur, export comptable Sage/EBP, alertes marge cassée
-          en temps réel), passez au forfait <strong>Pro à 39,99€/mois</strong>.
-        </p>
+
+        {/* Reset mensuel : info clé, encadrée pour la mettre en avant */}
+        <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 mb-4 flex items-start gap-2.5">
+          <CalendarClock size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-[13px] text-slate-700 leading-relaxed">
+            <strong className="text-slate-900">Quota réinitialisé le 1er du mois prochain.</strong>
+            {" "}Aucune action requise.
+          </div>
+        </div>
+
+        {/* Teaser Pro à venir — honnête sur le statut "en préparation" */}
         <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 mb-5">
-          <p className="text-slate-500 text-xs leading-relaxed">
-            Le quota se réinitialise automatiquement le 1er du mois prochain. Aucune action requise si vous
-            préférez attendre.
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+            Bientôt — Forfait Pro
           </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm"
+          <p className="text-[12px] text-slate-600 leading-relaxed mb-2">
+            Scans illimités, espace comptable (export Sage/EBP, écarts fournisseur,
+            multi-établissements). <strong>39,99 € HT/mois.</strong>
+          </p>
+          <a
+            href="mailto:chef@yieldapp.fr?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-blue-700 hover:text-blue-800"
           >
-            Plus tard
-          </button>
-          <button
-            onClick={() => { onClose(); onCheckout(); }}
-            className="flex-[2] px-4 py-3 rounded-xl bg-blue-600 text-white font-semibold text-sm shadow-blue-lg flex items-center justify-center gap-2"
-          >
-            <Sparkles size={16} /> Découvrir le Pro
-          </button>
+            <Mail size={11} /> Me prévenir à l&apos;ouverture
+          </a>
         </div>
+
+        <button
+          onClick={onClose}
+          className="w-full px-4 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-sm transition-colors"
+        >
+          Compris, j&apos;attends le mois prochain
+        </button>
       </motion.div>
     </motion.div>
   );

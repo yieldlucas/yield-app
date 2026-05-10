@@ -788,6 +788,38 @@ function ROISection() {
             </p>
           </div>
         </motion.div>
+
+        {/* Teaser Pro à venir — annonce honnête sans CTA Stripe (pas encore wired). */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.2 }}
+          className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-6"
+        >
+          <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
+            <div className="flex-shrink-0">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900 text-white text-[10px] font-bold uppercase tracking-wider">
+                Bientôt
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-slate-900 font-bold text-base mb-1">
+                Forfait Pro — 39,99 € HT/mois
+              </h3>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Scans illimités, espace comptable (export Sage, EBP, Cegid), suivi des écarts
+                fournisseur multi-établissements et accès API. Pour les groupes et restaurants à fort volume.
+              </p>
+            </div>
+            <a
+              href="mailto:chef@yieldapp.fr?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
+              className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-sm font-semibold transition-colors whitespace-nowrap"
+            >
+              Me prévenir
+            </a>
+          </div>
+        </motion.div>
       </div>
     </section>
   );

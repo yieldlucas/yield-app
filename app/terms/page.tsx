@@ -81,14 +81,18 @@ export default function TermsPage() {
             requiert la souscription à une formule payante.
           </p>
           <p>
-            Les tarifs en vigueur (Lancement à 19,99 € HT/mois, Pro à 39,99 € HT/mois) sont
-            indiqués sur la page d&apos;accueil. La facturation est mensuelle, automatique et
-            renouvelable par tacite reconduction tant que le Client n&apos;a pas résilié.
-            Les paiements sont opérés via Stripe (Stripe Payments Europe, Limited).
+            Le tarif en vigueur est de 19,99 € HT/mois (formule Lancement), indiqué sur la page
+            d&apos;accueil. La facturation est mensuelle, automatique et renouvelable par tacite
+            reconduction tant que le Client n&apos;a pas résilié. Les paiements sont opérés via
+            Stripe (Stripe Payments Europe, Limited). Une formule Pro à 39,99 € HT/mois
+            (scans illimités, espace comptable, multi-établissements) sera proposée
+            ultérieurement et ne s&apos;applique pas aux présentes conditions tant qu&apos;elle
+            n&apos;est pas commercialisée.
           </p>
           <p>
-            Le quota mensuel inclus dans la formule Lancement est de 200 scans. Au-delà,
-            le Client peut passer à la formule Pro pour bénéficier d&apos;un quota supérieur.
+            Le quota mensuel inclus dans la formule Lancement est de 200 scans. Au-delà, le
+            compteur se réinitialise automatiquement le 1er du mois suivant. Aucune facturation
+            additionnelle n&apos;est appliquée.
           </p>
         </Section>
 
