@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ChefHat, Download, Settings, User } from "lucide-react";
+import { Calculator, ChefHat, Download, Settings, User } from "lucide-react";
 import { NotificationsBell } from "./NotificationsBell";
+import { FlashCalculator } from "./FlashCalculator";
 import { type Alert } from "./types";
 
 /**
@@ -36,6 +38,9 @@ export function DashboardHeader({
   alerts: Alert[];
   onAlertClick: (invoiceId: string, alertId: string) => void;
 }) {
+  // Flash calculator : state local au header (open/close).
+  // L'invoice detail a sa propre instance avec son propre state, indépendante.
+  const [calcOpen, setCalcOpen] = useState(false);
   return (
     <div className="glass-nav sticky top-0 z-20">
       <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between">
@@ -75,6 +80,14 @@ export function DashboardHeader({
             </button>
           )}
           {usage && <UsageBadge usage={usage} onClick={onQuotaClick} />}
+          <button
+            onClick={() => setCalcOpen(true)}
+            className="text-slate-400 hover:text-blue-600 transition-colors"
+            aria-label="Calculatrice de marge"
+            title="Calculatrice flash"
+          >
+            <Calculator size={18} />
+          </button>
           <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
           <Link
             href="/dashboard/profile"
@@ -86,6 +99,7 @@ export function DashboardHeader({
           </Link>
         </div>
       </div>
+      <FlashCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
     </div>
   );
 }

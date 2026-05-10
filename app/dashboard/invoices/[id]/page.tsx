@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Download, FileText, X, ZoomIn, Check, Pencil,
+  ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check, Pencil,
   ChevronDown, RotateCcw, Save,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
+import { FlashCalculator, type CalculatorInitialProduct } from "@/app/dashboard/_components/FlashCalculator";
 
 // Aligné avec dashboard/page.tsx — code couleur strict variation
 const VARIATION_ALERT_PCT = 7;
@@ -72,6 +73,22 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // FlashCalculator : ouvert depuis le bouton calculatrice d'une ligne
+  // produit. Pré-rempli avec le produit + quantité de la ligne cliquée.
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [calcProduct, setCalcProduct] = useState<CalculatorInitialProduct | null>(null);
+  const [calcQuantity, setCalcQuantity] = useState(1);
+
+  const openCalcForItem = (it: ItemRow) => {
+    setCalcProduct({
+      id: it.product_id ?? undefined,
+      name: it.draft_label,
+      unit: it.unit ?? "",
+      lastPriceHt: it.draft_unit_price,
+    });
+    setCalcQuantity(it.draft_quantity || 1);
+    setCalcOpen(true);
+  };
 
   // ── Chargement initial ───
   useEffect(() => {
@@ -419,6 +436,14 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                           </p>
                         </button>
                       )}
+                      <button
+                        onClick={() => openCalcForItem(it)}
+                        className="text-slate-400 hover:text-blue-600 transition-colors"
+                        aria-label="Calculer la marge sur ce produit"
+                        title="Calculatrice flash"
+                      >
+                        <Calculator size={13} />
+                      </button>
                       {isDirty && (
                         <button onClick={() => revertItem(it.id)} className="text-slate-400 hover:text-rose-500" aria-label="Annuler">
                           <RotateCcw size={13} />
@@ -582,6 +607,13 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           </motion.div>
         )}
       </AnimatePresence>
+
+      <FlashCalculator
+        open={calcOpen}
+        onClose={() => setCalcOpen(false)}
+        initialProduct={calcProduct}
+        initialQuantity={calcQuantity}
+      />
     </div>
   );
 }

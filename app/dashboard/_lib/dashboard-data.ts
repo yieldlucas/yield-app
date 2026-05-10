@@ -188,6 +188,43 @@ export async function markAlertsRead(ids: string[]): Promise<boolean> {
   return !error;
 }
 
+export type ProductWithLastPrice = {
+  id: string;
+  name: string;
+  unit: string;
+  category: string | null;
+  /** Dernier prix HT enregistré dans price_history. NULL si le produit a été
+   *  créé manuellement et n'a jamais été présent sur une facture scannée. */
+  last_price_ht: number | null;
+  last_price_at: string | null;
+};
+
+/**
+ * Recherche dans le catalogue produits enrichi du dernier prix connu.
+ * Utilisé par FlashCalculator (autocomplete). Vue products_with_last_price
+ * créée en migration 013, RLS via security_invoker.
+ */
+export async function searchProductsWithLastPrice(
+  query: string,
+  limit = 10,
+): Promise<ProductWithLastPrice[]> {
+  const trimmed = query.trim();
+  let req = supabase
+    .from("products_with_last_price")
+    .select("id, name, unit, category, last_price_ht, last_price_at")
+    .order("name", { ascending: true })
+    .limit(limit);
+  if (trimmed.length > 0) {
+    req = req.ilike("name", `%${trimmed}%`);
+  }
+  const { data, error } = await req;
+  if (error || !data) return [];
+  return (data as unknown as ProductWithLastPrice[]).map((r) => ({
+    ...r,
+    last_price_ht: r.last_price_ht == null ? null : Number(r.last_price_ht),
+  }));
+}
+
 /**
  * Supprime une facture et son fichier dans Storage.
  * Récupère `image_path` AVANT le delete (sinon RLS bloquerait la lecture
