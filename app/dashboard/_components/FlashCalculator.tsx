@@ -87,9 +87,17 @@ type Ingredient = {
   quantityUnit: string;
 };
 
-let UID_COUNTER = 0;
+/** Génère un identifiant local stable et unique pour la liste d'ingrédients.
+ *  crypto.randomUUID() est dispo dans tous les navigateurs supportés par
+ *  Next.js 15 (Chrome 92+, Safari 15.4+) et garantit l'unicité même si
+ *  plusieurs lignes sont créées dans la même milliseconde. */
+const newUid = (): string =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `i-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+
 const makeEmpty = (): Ingredient => ({
-  uid: `i-${++UID_COUNTER}-${Date.now()}`,
+  uid: newUid(),
   productId: null,
   name: "",
   unit: "",
@@ -100,7 +108,7 @@ const makeEmpty = (): Ingredient => ({
 
 function fromInitial(init: CalculatorInitialIngredient): Ingredient {
   return {
-    uid: `i-${++UID_COUNTER}-${Date.now()}`,
+    uid: newUid(),
     productId: init.productId ?? null,
     name: init.name,
     unit: init.unit,

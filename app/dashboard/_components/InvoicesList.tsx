@@ -63,12 +63,14 @@ export function InvoicesList({
             onClick={onOpenGallery}
             className="text-slate-400 hover:text-blue-600 transition-colors text-xs flex items-center gap-1 font-medium"
             title="Importer une facture déjà prise en photo"
+            aria-label="Importer une facture déjà prise en photo"
           >
             <FolderOpen size={13} /> Importer
           </button>
           <button
             onClick={onOpenCamera}
             className="label-blue text-xs px-3 py-1.5 rounded-full font-semibold flex items-center gap-1"
+            aria-label="Scanner un nouveau bon de livraison"
           >
             <Camera size={12} /> Scanner
           </button>

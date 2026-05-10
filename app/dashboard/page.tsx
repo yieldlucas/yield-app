@@ -39,6 +39,7 @@ import {
   markAlertRead, deleteInvoice, fetchMonthlyStats, type MonthlyStats,
 } from "./_lib/dashboard-data";
 import { processBatch, type BatchInput } from "./_lib/process-batch";
+import { type ProcessSignal } from "./_lib/process-invoice";
 
 const QUOTA = 200;
 const CAMERA_GUIDE_SEEN_KEY = "yield_camera_guide_seen";
@@ -84,6 +85,9 @@ export default function DashboardPage() {
   } | null>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  // Signal partagé avec processBatch : flippé à true au démontage pour
+  // arrêter proprement le polling et éviter les setState orphelins.
+  const batchSignalRef = useRef<ProcessSignal>({ cancelled: false });
 
   // ─── Camera UX : guide à la 1ère utilisation, ouverture directe ensuite ───
   const openCamera = () => {
@@ -294,8 +298,9 @@ export default function DashboardPage() {
         void reloadInvoices();
         void reloadAlerts();
         void reloadMonthlyStats();
+        void reloadRecipesStats();
       },
-    });
+    }, batchSignalRef.current);
 
   const sendStack = () => {
     if (stack.length === 0) return;
@@ -314,6 +319,15 @@ export default function DashboardPage() {
     setBatchOpen(true);
     void runBatch(queued);
   };
+
+  // ─── Cleanup : flippe le signal d'annulation au démontage ──
+  // Sans ça, un user qui quitte le dashboard pendant un batch verrait React
+  // warner "Can't perform a state update on an unmounted component" car les
+  // callbacks de processBatch tenteraient de setBatch / setUsage / etc.
+  useEffect(() => {
+    const ref = batchSignalRef.current;
+    return () => { ref.cancelled = true; };
+  }, []);
 
   // ─── Bootstrap : session, data, onboarding, retour Stripe ──
   useEffect(() => {

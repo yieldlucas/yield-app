@@ -41,12 +41,20 @@ export type ProcessOneResult = {
   scansUsed?: number;
 };
 
+/** Signal de cancel pour le polling. Le caller flippe `cancelled = true`
+ *  dans un cleanup useEffect quand le composant se démonte → le polling
+ *  arrête à la prochaine itération sans appeler `onStep` (qui ferait un
+ *  setState sur composant démonté = warning React + memory leak). */
+export type ProcessSignal = { cancelled: boolean };
+
 /**
  * Traite un fichier unique. Délègue au polling de la table invoices pour
  * remonter les sous-états (`processingStep`) au caller via `onStep`.
  *
  * @param onStep callback appelé à chaque tick de polling avec le step courant
  * @param onSessionLost callback si la session expire (le caller doit redirect)
+ * @param signal optionnel — flippe `signal.cancelled = true` pour stopper
+ *               proprement (utile lors du démontage du composant caller).
  */
 export async function processOne(
   file: File,
@@ -55,6 +63,7 @@ export async function processOne(
     totalItemsCount?: number | null;
   }) => void,
   onSessionLost: () => void,
+  signal?: ProcessSignal,
 ): Promise<ProcessOneResult> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
@@ -95,6 +104,9 @@ export async function processOne(
 
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    if (signal?.cancelled) {
+      throw new Error("Scan annulé");
+    }
 
     let pollResult;
     try {

@@ -6,6 +6,7 @@ import {
   Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
   TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight, ArrowLeft,
   CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle, KeyRound,
+  Salad, Sliders, LineChart,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
@@ -92,6 +93,7 @@ function Nav({ onCTA }: { onCTA: () => void }) {
 
         <div className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-500">
           <a href="#comment" className="hover:text-slate-900 transition-colors">Fonctionnement</a>
+          <a href="#recettes" className="hover:text-slate-900 transition-colors">Mes Recettes</a>
           <a href="#roi" className="hover:text-slate-900 transition-colors">ROI</a>
           <a href="#securite" className="hover:text-slate-900 transition-colors">Sécurité</a>
         </div>
@@ -117,6 +119,7 @@ function Nav({ onCTA }: { onCTA: () => void }) {
           >
             <div className="px-5 py-4 flex flex-col gap-4 text-sm font-medium text-slate-600">
               <a href="#comment" onClick={() => setMobileOpen(false)}>Fonctionnement</a>
+              <a href="#recettes" onClick={() => setMobileOpen(false)}>Mes Recettes</a>
               <a href="#roi" onClick={() => setMobileOpen(false)}>ROI</a>
               <a href="#securite" onClick={() => setMobileOpen(false)}>Sécurité</a>
               <button onClick={onCTA} className="btn-primary py-3 rounded-xl text-sm">
@@ -349,6 +352,14 @@ function HowItWorksSection() {
       detail: "Visualisez quelles fiches techniques sont impactées et de combien de points.",
       mockup: <AlertMockup />,
     },
+    {
+      number: "04", Icon: ChefHat,
+      title: "Pilotez vos marges plat par plat",
+      subtitle: "Le module Mes Recettes en accès libre",
+      description: "Composez vos plats dans la calculatrice, liez chaque ingrédient à votre catalogue. À chaque scan, le coût matière est recalculé. Vous voyez en un coup d'œil quels plats glissent sous votre seuil de marge.",
+      detail: "Simulateur de portion intégré : tester 180g de frites au lieu de 200g sans toucher au prix client, en 3 secondes.",
+      mockup: <RecipesMockup />,
+    },
   ];
 
   return (
@@ -492,6 +503,173 @@ function AlertMockup() {
         <span className="text-xs text-slate-500"> en ajustant votre carte</span>
       </motion.div>
     </div>
+  );
+}
+
+function RecipesMockup() {
+  // 3 recettes mockées pour montrer en un coup d'œil le triage par santé
+  // (rouge = critique, ambre = à surveiller, vert = sain). C'est exactement
+  // l'écran que voit le chef dans /dashboard/recipes après quelques scans.
+  const dishes = [
+    { name: "Tartare de bœuf", margin: 68, drift: +9, tone: "rose" },
+    { name: "Pavé de saumon", margin: 73, drift: +4, tone: "amber" },
+    { name: "Frites maison", margin: 81, drift: -1, tone: "emerald" },
+  ];
+  const toneClasses = (t: string) => {
+    if (t === "rose") return { bar: "bg-rose-400", text: "text-rose-600", chip: "bg-rose-50 text-rose-600 border-rose-100" };
+    if (t === "amber") return { bar: "bg-amber-400", text: "text-amber-600", chip: "bg-amber-50 text-amber-700 border-amber-100" };
+    return { bar: "bg-emerald-400", text: "text-emerald-600", chip: "bg-emerald-50 text-emerald-600 border-emerald-100" };
+  };
+  return (
+    <div className="w-72 card rounded-2xl overflow-hidden shadow-card">
+      <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Salad size={14} className="text-emerald-600" />
+          <span className="text-xs font-semibold text-slate-700">Mes recettes</span>
+        </div>
+        <span className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-100 px-1.5 py-0.5 rounded-md">
+          1 critique
+        </span>
+      </div>
+      <div className="p-3 space-y-2">
+        {dishes.map((d, i) => {
+          const c = toneClasses(d.tone);
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -8 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.1 }}
+              className="rounded-xl border border-slate-100 bg-white p-2.5 flex items-center gap-2.5"
+            >
+              <div className={`w-1 self-stretch rounded-full ${c.bar}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-800 truncate">{d.name}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-semibold tabular-nums px-1.5 py-0.5 rounded-md border ${c.chip}`}>
+                    Marge {d.margin}%
+                  </span>
+                  <span className={`text-[10px] font-semibold tabular-nums ${c.text}`}>
+                    {d.drift > 0 ? "+" : ""}{d.drift}%
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+      <div className="px-3 pb-3">
+        <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 flex items-center gap-2">
+          <Sliders size={12} className="text-blue-600 flex-shrink-0" />
+          <span className="text-[11px] text-slate-600 leading-tight">
+            Simulez 180g au lieu de 200g pour ramener la marge dans le vert.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Recipes Section : pitch dédié du module Mes Recettes ─────────────────
+function RecipesSection() {
+  const features = [
+    {
+      Icon: Salad, title: "Lien dynamique",
+      desc: "Chaque ingrédient est lié au dernier prix scanné. Pas de ressaisie, pas de fichier Excel obsolète.",
+    },
+    {
+      Icon: LineChart, title: "Dérive en temps réel",
+      desc: "Yield surveille automatiquement vos plats et flag ceux dont la marge passe sous votre seuil.",
+    },
+    {
+      Icon: Sliders, title: "Simulateur de portion",
+      desc: "Testez 180g au lieu de 200g et voyez instantanément si la marge revient au vert sans toucher au prix client.",
+    },
+  ];
+
+  return (
+    <section id="recettes" className="py-32 px-5 bg-gradient-to-b from-white via-emerald-50/30 to-white">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-16"
+        >
+          <p className="text-emerald-700 uppercase tracking-widest text-xs font-semibold mb-3 inline-flex items-center gap-1.5">
+            <ChefHat size={12} /> Nouveau · Mes Recettes
+          </p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4 leading-tight">
+            Vos plats, <span className="gradient-text">connectés à vos factures</span>.
+          </h2>
+          <p className="text-slate-500 max-w-2xl mx-auto leading-relaxed">
+            Composez vos fiches techniques une fois. Yield met à jour leur coût matière à chaque scan
+            et vous prévient — discrètement, dans l&apos;app, sans notification — quand un plat glisse
+            sous votre seuil de rendement.
+          </p>
+        </motion.div>
+
+        <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
+          <motion.div
+            initial={{ opacity: 0, x: -24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="flex justify-center"
+          >
+            <RecipesMockup />
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, x: 24 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="space-y-5"
+          >
+            {features.map(({ Icon, title, desc }, i) => (
+              <div key={i} className="flex items-start gap-4">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0">
+                  <Icon size={18} className="text-emerald-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-slate-900 font-bold text-base mb-1">{title}</h3>
+                  <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </motion.div>
+        </div>
+
+        {/* Promesse zéro-bruit en bas — important pour différencier des outils
+            qui spamment de notifications */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="card rounded-2xl p-6 md:p-8 max-w-3xl mx-auto border border-slate-100 bg-white"
+        >
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
+              <Bell size={20} className="text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                Promesse zéro bruit
+              </p>
+              <h3 className="text-slate-900 font-bold text-base mb-2">
+                Pas de notification intempestive. L&apos;info reste là où vous la cherchez.
+              </h3>
+              <p className="text-slate-500 text-sm leading-relaxed">
+                Yield ne vous spamme jamais. Le widget <em>Santé de votre Carte</em> sur le dashboard
+                vous indique simplement combien de plats nécessitent votre attention. Vous décidez quand
+                creuser, sans interrompre votre service.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </section>
   );
 }
 
@@ -1436,6 +1614,7 @@ export default function LandingPage() {
         <StatsSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <HowItWorksSection />
+        <RecipesSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <ROISection />
         <div className="divider-gradient max-w-6xl mx-auto" />

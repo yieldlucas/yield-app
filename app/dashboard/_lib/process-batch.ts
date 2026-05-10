@@ -4,7 +4,9 @@
 // pour stopper le lot et déclencher le bon flow d'upsell/paiement.
 
 import { type BatchItem } from "../_components/types";
-import { isPaymentRequired, isQuotaExceeded, processOne } from "./process-invoice";
+import {
+  isPaymentRequired, isQuotaExceeded, processOne, type ProcessSignal,
+} from "./process-invoice";
 
 export type BatchInput = BatchItem & { file: File };
 
@@ -29,19 +31,31 @@ export type BatchCallbacks = {
 /**
  * Traite séquentiellement chaque item du batch. Stoppe net si l'API renvoie
  * un 402 — l'UI gère la suite (upsell ou checkout) via les callbacks dédiés.
+ *
+ * Le `signal` optionnel permet au composant caller d'arrêter le batch lors
+ * d'un démontage (cleanup useEffect) — évite les setState orphelins via les
+ * callbacks `cb.updateItem` après que le composant a quitté l'écran.
  */
-export async function processBatch(items: BatchInput[], cb: BatchCallbacks): Promise<void> {
+export async function processBatch(
+  items: BatchInput[],
+  cb: BatchCallbacks,
+  signal?: ProcessSignal,
+): Promise<void> {
   for (const item of items) {
+    if (signal?.cancelled) return;
     cb.updateItem(item.id, { status: "uploading" });
     try {
       // Petit délai pour donner du feedback visuel.
       await new Promise((r) => setTimeout(r, 400));
+      if (signal?.cancelled) return;
       cb.updateItem(item.id, { status: "processing" });
       const result = await processOne(
         item.file,
-        (step) => cb.updateItem(item.id, step),
+        (step) => { if (!signal?.cancelled) cb.updateItem(item.id, step); },
         cb.onSessionLost,
+        signal,
       );
+      if (signal?.cancelled) return;
       cb.updateItem(item.id, {
         status: "done",
         supplier: result.supplier,
