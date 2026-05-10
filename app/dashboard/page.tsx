@@ -23,6 +23,8 @@ import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
 import { EmptyScanCTA } from "./_components/EmptyScanCTA";
 import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
+import { CalculatorCard } from "./_components/CalculatorCard";
+import { FlashCalculator } from "./_components/FlashCalculator";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
 } from "./_components/SubscriptionBanners";
@@ -67,6 +69,9 @@ export default function DashboardPage() {
   // Pré-remplit la modal d'onboarding si le user a déjà saisi son nom
   // (re-onboarding manuel via /profile, ou ré-affichage forcé).
   const [restaurantName, setRestaurantName] = useState("");
+  // Calculatrice de marge : state remonté ici pour que le bouton header ET la
+  // CalculatorCard du body puissent partager le même drawer.
+  const [calcOpen, setCalcOpen] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
@@ -366,6 +371,7 @@ export default function DashboardPage() {
         portalLoading={portalLoading} onOpenPortal={openBillingPortal}
         usage={usage} onQuotaClick={() => setQuotaExceeded(true)}
         alerts={alerts} onAlertClick={onAlertClick}
+        onOpenCalculator={() => setCalcOpen(true)}
       />
 
       <div className="max-w-lg mx-auto px-5 pt-6 space-y-8">
@@ -392,6 +398,11 @@ export default function DashboardPage() {
 
         {/* KPIs synthétiques du mois — caché tant qu'aucune facture processed. */}
         <MonthlyStatsStrip stats={monthlyStats} alertsCount={alerts.length} />
+
+        {/* Carte d'entrée vers la calculatrice — toujours visible, position
+            haute pour donner à l'outil la place qu'il mérite (au-dessus des
+            scans). État ouvert/fermé géré ici, partagé avec le bouton header. */}
+        <CalculatorCard onOpen={() => setCalcOpen(true)} />
 
         {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
 
@@ -459,9 +470,11 @@ export default function DashboardPage() {
         show={showOnboarding}
         onClose={dismissOnboarding}
         onStart={() => { dismissOnboarding(); openCamera(); }}
+        onOpenCalculator={() => setCalcOpen(true)}
         onSubmitName={onSubmitRestaurantName}
         initialName={restaurantName}
       />
+      <FlashCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
     </div>
   );
 }

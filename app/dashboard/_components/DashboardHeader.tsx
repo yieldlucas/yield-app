@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { Calculator, ChefHat, Download, Settings, User } from "lucide-react";
 import { NotificationsBell } from "./NotificationsBell";
-import { FlashCalculator } from "./FlashCalculator";
 import { type Alert } from "./types";
 
 /**
  * Header du dashboard : logo + actions (export CSV, billing portal, badge
- * quota, cloche notifs, profil). Sticky en haut. État 100% contrôlé par les
- * props — aucune logique de fetch ici.
+ * quota, raccourci calculatrice, cloche notifs, profil). Sticky en haut. État
+ * 100% contrôlé par les props — aucune logique de fetch ici.
  *
  * La cloche est désormais cliquable et ouvre un drawer/popover listant les
  * alertes. Voir NotificationsBell.
+ *
+ * Le bouton calculatrice ne porte plus son propre état : on délègue
+ * l'ouverture au parent (dashboard/page.tsx) pour que la CalculatorCard du
+ * body puisse partager le même drawer.
  */
 export function DashboardHeader({
   invoicesCount,
@@ -26,6 +28,7 @@ export function DashboardHeader({
   onQuotaClick,
   alerts,
   onAlertClick,
+  onOpenCalculator,
 }: {
   invoicesCount: number;
   exportLoading: boolean;
@@ -37,20 +40,18 @@ export function DashboardHeader({
   onQuotaClick: () => void;
   alerts: Alert[];
   onAlertClick: (invoiceId: string, alertId: string) => void;
+  onOpenCalculator: () => void;
 }) {
-  // Flash calculator : state local au header (open/close).
-  // L'invoice detail a sa propre instance avec son propre state, indépendante.
-  const [calcOpen, setCalcOpen] = useState(false);
   return (
     <div className="glass-nav sticky top-0 z-20">
-      <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
+      <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 flex-shrink-0">
           <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
             <ChefHat size={16} className="text-white" />
           </div>
           <span className="font-black text-base tracking-tight gradient-text">YIELD</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={onExportCsv}
             disabled={exportLoading || invoicesCount === 0}
@@ -81,12 +82,13 @@ export function DashboardHeader({
           )}
           {usage && <UsageBadge usage={usage} onClick={onQuotaClick} />}
           <button
-            onClick={() => setCalcOpen(true)}
-            className="text-slate-400 hover:text-blue-600 transition-colors"
+            onClick={onOpenCalculator}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[12px] font-semibold transition-colors"
             aria-label="Calculatrice de marge"
-            title="Calculatrice flash"
+            title="Calculateur Marge"
           >
-            <Calculator size={18} />
+            <Calculator size={14} />
+            <span className="hidden sm:inline whitespace-nowrap">Calculateur</span>
           </button>
           <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
           <Link
@@ -99,7 +101,6 @@ export function DashboardHeader({
           </Link>
         </div>
       </div>
-      <FlashCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
     </div>
   );
 }

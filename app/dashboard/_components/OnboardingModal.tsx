@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Camera, ChefHat, ChevronRight, Sparkles } from "lucide-react";
+import { Bell, Calculator, Camera, ChefHat, ChevronRight, Sparkles } from "lucide-react";
 
 const STEPS = [
   { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
   { n: "02", Icon: Sparkles, title: "L'IA lit", desc: "Chaque ligne matière est extraite et comparée à vos historiques." },
   { n: "03", Icon: Bell, title: "Alerte rendement", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
+  { n: "04", Icon: Calculator, title: "Pilotez vos marges", desc: "Composez vos plats dans la calculatrice et obtenez un prix de vente conseillé." },
 ];
 
 const NAME_MIN = 2;
@@ -30,12 +31,16 @@ export function OnboardingModal({
   show,
   onClose,
   onStart,
+  onOpenCalculator,
   onSubmitName,
   initialName = "",
 }: {
   show: boolean;
   onClose: () => void;
   onStart: () => void;
+  /** Optionnel — ajoute un CTA secondaire ouvrant la calculatrice à la fin
+   *  du tutoriel pour faire découvrir l'outil dès le 1er run. */
+  onOpenCalculator?: () => void;
   onSubmitName: (name: string) => Promise<void>;
   initialName?: string;
 }) {
@@ -138,10 +143,10 @@ export function OnboardingModal({
             ) : (
               <>
                 <h2 className="text-slate-900 font-bold text-xl text-center mb-2">
-                  Comment ça marche
+                  Bienvenue dans votre cockpit
                 </h2>
                 <p className="text-slate-500 text-sm text-center mb-7 leading-relaxed">
-                  Scannez votre premier bon de livraison en 2 minutes. YIELD veille sur votre rendement.
+                  Scannez vos BL et ajustez vos prix de vente : YIELD veille sur votre rendement.
                 </p>
                 <div className="space-y-4 mb-7">
                   {STEPS.map((s, i) => (
@@ -159,12 +164,31 @@ export function OnboardingModal({
                     </div>
                   ))}
                 </div>
+                {onOpenCalculator && (
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 mb-5 text-[12px] text-slate-600 leading-relaxed">
+                    <strong className="text-slate-900">Chef, voici votre cockpit.</strong>{" "}
+                    Ajoutez vos ingrédients pour tester la rentabilité d&apos;un nouveau plat
+                    ou ajuster vos prix de vente instantanément.
+                  </div>
+                )}
                 <button
                   onClick={onStart}
                   className="btn-primary w-full py-3 rounded-xl text-sm flex items-center justify-center gap-2"
                 >
                   <Camera size={15} /> Scanner mon premier BL
                 </button>
+                {onOpenCalculator && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenCalculator();
+                    }}
+                    className="w-full mt-2 py-3 rounded-xl text-sm font-semibold border border-blue-200 text-blue-700 hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors"
+                  >
+                    <ChevronRight size={15} className="rotate-180 hidden" />
+                    Découvrir la calculatrice de marge
+                  </button>
+                )}
                 <button
                   onClick={onClose}
                   className="w-full mt-2 py-2.5 text-sm text-slate-400 hover:text-slate-700 transition-colors"
