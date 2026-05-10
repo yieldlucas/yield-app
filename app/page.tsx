@@ -717,8 +717,8 @@ function ROISection() {
             <span className="gradient-text">YIELD est rentabilisé.</span>
           </h2>
           <p className="text-slate-500 max-w-xl mx-auto">
-            Abonnement YIELD : 49€/mois. Économies récupérées lors des 3 premiers scans :{" "}
-            <span className="font-semibold text-slate-700">153€/mois</span> — soit 3× le coût de l&apos;abonnement.
+            Abonnement YIELD : 19,99 € HT/mois. Économies récupérées lors des 3 premiers scans :{" "}
+            <span className="font-semibold text-slate-700">153 €/mois</span> — soit près de 8× le coût de l&apos;abonnement.
           </p>
         </motion.div>
 
@@ -766,11 +766,11 @@ function ROISection() {
             <div className="text-center">
               <p className="text-slate-400 text-sm mb-2">Abonnement YIELD</p>
               <p className="text-3xl font-bold text-slate-900 font-mono">
-                49€<span className="text-base font-normal text-slate-400">/mois</span>
+                19,99 €<span className="text-base font-normal text-slate-400"> HT/mois</span>
               </p>
             </div>
             <div className="text-center">
-              <div className="text-5xl font-bold gradient-text font-mono">25×</div>
+              <div className="text-5xl font-bold gradient-text font-mono">60×</div>
               <p className="text-slate-500 text-sm mt-1">ROI moyen constaté</p>
             </div>
             <div className="text-center">
@@ -782,7 +782,7 @@ function ROISection() {
           </div>
           <div className="mt-6 pt-6 border-t border-slate-100 text-center">
             <p className="text-slate-600 text-sm">
-              <span className="font-semibold text-slate-900">Dès votre 3ème scan,</span>{" "}
+              <span className="font-semibold text-slate-900">Dès le premier scan,</span>{" "}
               YIELD vous a rapporté plus qu&apos;il ne coûte.{" "}
               <span className="text-blue-600 font-semibold">Rentabilité garantie ou remboursé.</span>
             </p>
