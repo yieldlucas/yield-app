@@ -71,7 +71,9 @@ export async function GET(req: NextRequest) {
 
     const origin = req.headers.get("origin") ?? req.nextUrl.origin ?? "https://yieldapp.fr";
     const dashboardUrl = `${origin}/dashboard`;
-    const checkoutUrl = `${origin}/dashboard?checkout=trigger`;
+    // Le bouton CTA du mail trial-reminder pointe vers /billing (page dédiée
+    // au tunnel d'achat — propose checkout direct ou portail si déjà subscribed).
+    const checkoutUrl = `${origin}/billing`;
 
     let sent = 0;
     let skipped = 0;

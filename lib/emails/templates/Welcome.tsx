@@ -36,13 +36,16 @@ export default function WelcomeEmail({ firstName, dashboardUrl }: WelcomeEmailPr
             <Text style={brandSub}>Pilotage marges restauration</Text>
           </Section>
 
-          <Heading as="h1" style={h1}>Bienvenue, {firstName} 👨‍🍳</Heading>
+          <Heading as="h1" style={h1}>Salut Chef ! 👨‍🍳</Heading>
 
           <Text style={text}>
-            Vous venez de rejoindre la première application qui veille sur le rendement
-            de votre cuisine. En 30 secondes par bon de livraison, Yield extrait chaque
-            ligne matière, suit l&apos;évolution des prix et vous alerte dès qu&apos;un
-            fournisseur augmente discrètement.
+            C&apos;est Lucas de Yield. Ravi de vous accueillir.
+          </Text>
+
+          <Text style={text}>
+            <strong>Scannez votre premier BL dès maintenant pour protéger vos marges.</strong>
+            {" "}En 30 secondes, Yield extrait chaque ligne, suit l&apos;évolution des prix
+            et vous alerte dès qu&apos;un fournisseur augmente discrètement.
           </Text>
 
           <Section style={cta}>
@@ -53,7 +56,7 @@ export default function WelcomeEmail({ firstName, dashboardUrl }: WelcomeEmailPr
 
           <Section style={tip}>
             <Text style={tipText}>
-              <strong style={tipStrong}>Conseil chef</strong> — prenez en photo votre prochain
+              <strong style={tipStrong}>Conseil</strong> — prenez en photo votre prochain
               BL dès la réception. C&apos;est le meilleur moyen de bâtir un historique
               fiable qui parle directement à vos fiches techniques.
             </Text>
@@ -65,7 +68,7 @@ export default function WelcomeEmail({ firstName, dashboardUrl }: WelcomeEmailPr
           </Text>
 
           <Text style={signature}>
-            — L&apos;équipe Yield
+            — Lucas, fondateur de Yield
           </Text>
 
           <Section style={footer}>

@@ -52,8 +52,14 @@ export default function TrialReminderEmail({
           </Section>
 
           <Heading as="h1" style={h1}>
-            Plus que {daysLeft} jour{daysLeft > 1 ? "s" : ""} d&apos;essai gratuit, {firstName}
+            Chef, votre essai se termine dans {daysLeft} jour{daysLeft > 1 ? "s" : ""}
           </Heading>
+
+          <Text style={text}>
+            <strong>Ne laissez plus passer d&apos;augmentations de prix cachées.</strong>
+            {" "}Une hausse de 8% sur la côte de bœuf qui vous échappe, c&apos;est 1 à 2 points
+            de marge perdus à chaque service.
+          </Text>
 
           {hasValue ? (
             <>
@@ -62,48 +68,37 @@ export default function TrialReminderEmail({
                 livraison</strong> et détecté <strong>{alertsCount} hausse{alertsCount > 1 ? "s" : ""}
                 de prix</strong> chez vos fournisseurs.
               </Text>
-              <Text style={text}>
-                Avez-vous bien vu ces alertes ? Chacune représente une dérive matière qui,
-                non corrigée, gruge votre marge à chaque service.
-              </Text>
               <Section style={statBox}>
                 <Text style={statLabel}>ALERTES DÉTECTÉES PENDANT VOTRE ESSAI</Text>
                 <Text style={statValue}>{alertsCount}</Text>
               </Section>
             </>
           ) : (
-            <>
-              <Text style={text}>
-                Il vous reste {daysLeft} jour{daysLeft > 1 ? "s" : ""} pour tester Yield
-                gratuitement. Vous n&apos;avez pas encore scanné de bon de livraison —
-                c&apos;est en 30 secondes et ça change tout.
-              </Text>
-              <Text style={text}>
-                Photographiez votre prochain BL à réception : Yield extrait chaque ligne,
-                identifie les hausses de prix et vous alerte avant qu&apos;elles n&apos;impactent
-                vos plats.
-              </Text>
-            </>
+            <Text style={text}>
+              Vous n&apos;avez pas encore scanné de bon de livraison — il vous reste
+              {" "}{daysLeft} jour{daysLeft > 1 ? "s" : ""} pour tester Yield gratuitement.
+              Photographiez votre prochain BL à réception, l&apos;analyse prend 30 secondes.
+            </Text>
           )}
 
           <Section style={cta}>
-            <Button style={primaryButton} href={hasValue ? checkoutUrl : dashboardUrl}>
-              {hasValue ? "Continuer avec Yield" : "Scanner mon 1er BL"}
+            <Button style={primaryButton} href={checkoutUrl}>
+              Passer au plan payant
             </Button>
           </Section>
 
-          {hasValue && (
-            <Text style={secondaryCta}>
-              Pas encore prêt ? <Link href={dashboardUrl} style={inlineLink}>Voir mes alertes</Link> avant la fin du trial.
-            </Text>
-          )}
+          <Text style={secondaryCta}>
+            <Link href={dashboardUrl} style={inlineLink}>
+              {hasValue ? "Voir mes alertes" : "Scanner un BL d'abord"}
+            </Link>
+          </Text>
 
           <Text style={text}>
             Sans engagement, résiliable en 1 clic depuis le portail Stripe. À 19,99 € HT/mois,
             la formule Lancement inclut 200 scans, alertes temps réel et exports comptables.
           </Text>
 
-          <Text style={signature}>— L&apos;équipe Yield</Text>
+          <Text style={signature}>— Lucas, fondateur de Yield</Text>
 
           <Section style={footer}>
             <Text style={footerText}>
