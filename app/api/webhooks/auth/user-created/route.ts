@@ -71,10 +71,13 @@ export async function POST(req: NextRequest) {
     // approximation — sera "chef" si l'email est bizarre.
     const firstName = email.split("@")[0]?.trim() || "chef";
 
-    const origin = req.headers.get("origin")
-      ?? req.nextUrl.origin
+    // Le header origin est absent quand Supabase appelle ce webhook (serveur
+    // à serveur). On privilégie NEXT_PUBLIC_APP_URL pour que le bouton du
+    // mail welcome pointe sur https://yieldapp.fr et pas un fallback hasardeux.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? req.headers.get("origin")
       ?? "https://yieldapp.fr";
-    const dashboardUrl = `${origin}/dashboard`;
+    const dashboardUrl = `${appUrl}/dashboard`;
 
     const sent = await sendWelcomeEmail(email, { firstName, dashboardUrl });
     return NextResponse.json({ sent, userId: payload.record?.id });

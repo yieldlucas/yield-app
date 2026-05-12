@@ -69,11 +69,15 @@ export async function GET(req: NextRequest) {
       restaurant_name: string | null;
     }[];
 
-    const origin = req.headers.get("origin") ?? req.nextUrl.origin ?? "https://yieldapp.fr";
-    const dashboardUrl = `${origin}/dashboard`;
+    // Pour un cron, origin est vide. On privilégie l'env var prod, fallback
+    // explicite yieldapp.fr pour que les boutons des emails marchent toujours.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? req.headers.get("origin")
+      ?? "https://yieldapp.fr";
+    const dashboardUrl = `${appUrl}/dashboard`;
     // Le bouton CTA du mail trial-reminder pointe vers /billing (page dédiée
     // au tunnel d'achat — propose checkout direct ou portail si déjà subscribed).
-    const checkoutUrl = `${origin}/billing`;
+    const checkoutUrl = `${appUrl}/billing`;
 
     let sent = 0;
     let skipped = 0;

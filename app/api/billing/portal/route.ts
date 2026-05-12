@@ -28,11 +28,16 @@ export async function POST(req: NextRequest) {
     if (!customerId) throw notFound("Aucun abonnement actif sur ce compte");
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-    const origin = req.headers.get("origin") ?? req.nextUrl.origin;
+    // URL publique : env var de prod en priorité, header origin sinon (dev/preview),
+    // fallback yieldapp.fr pour ne jamais retourner localhost en prod.
+    const appUrl =
+      process.env.NEXT_PUBLIC_APP_URL
+      ?? req.headers.get("origin")
+      ?? "https://yieldapp.fr";
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,
-      return_url: `${origin}/dashboard`,
+      return_url: `${appUrl}/dashboard`,
     });
 
     return NextResponse.json({ url: session.url });

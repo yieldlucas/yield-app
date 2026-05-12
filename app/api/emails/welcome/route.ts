@@ -31,10 +31,12 @@ export async function POST(req: NextRequest) {
     const restaurantName = (profile as { restaurant_name?: string } | null)?.restaurant_name?.trim();
     const firstName = restaurantName || email.split("@")[0] || "chef";
 
-    const origin = req.headers.get("origin")
-      ?? req.nextUrl.origin
+    // Priorité NEXT_PUBLIC_APP_URL pour ne pas envoyer un lien vers
+    // un preview Vercel ou pire localhost en email.
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      ?? req.headers.get("origin")
       ?? "https://yieldapp.fr";
-    const dashboardUrl = `${origin}/dashboard`;
+    const dashboardUrl = `${appUrl}/dashboard`;
 
     const sent = await sendWelcomeEmail(email, { firstName, dashboardUrl });
     return NextResponse.json({ sent });
