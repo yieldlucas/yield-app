@@ -503,7 +503,7 @@ function ROISection() {
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="text-center mb-16"
+          className="text-center mb-12"
         >
           <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Retour sur investissement</p>
           <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
@@ -514,6 +514,20 @@ function ROISection() {
             Abonnement YIELD : 19,99 € HT/mois. Économies récupérées lors des 3 premiers scans :{" "}
             <span className="font-semibold text-slate-700">153 €/mois</span> — soit près de 8× le coût de l&apos;abonnement.
           </p>
+        </motion.div>
+
+        {/* Badge "simulation" — ancrage explicite des chiffres dans une
+            hypothèse de calcul. Plus honnête qu'un chiffre balancé sans contexte. */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="flex items-center justify-center mb-8"
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-500 text-[11px] font-semibold uppercase tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+            Simulation typique — Brasserie 500 k€ CA, 3 livraisons / semaine
+          </div>
         </motion.div>
 
         <div className="grid md:grid-cols-3 gap-5 mb-8">
@@ -1306,10 +1320,11 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
 function FinalCTABanner({ onCTA }: { onCTA: () => void }) {
   // Trust strip — anciennes infos de SecuritySection condensées en 4 items
   // discrets sous le CTA principal. Rassure sans saouler.
+  // Labels courts pour rentrer proprement en 2×2 sur mobile (sans wrap moche).
   const trustItems = [
-    { Icon: Lock, label: "Chiffrement AES-256" },
+    { Icon: Lock, label: "Chiffré AES-256" },
     { Icon: Server, label: "Hébergé en France" },
-    { Icon: KeyRound, label: "Magic Link sans mot de passe" },
+    { Icon: KeyRound, label: "Sans mot de passe" },
     { Icon: ShieldCheck, label: "RGPD natif" },
   ];
 
@@ -1339,12 +1354,13 @@ function FinalCTABanner({ onCTA }: { onCTA: () => void }) {
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
 
-          {/* Trust strip — sécurité condensée sous le CTA */}
-          <div className="mt-10 pt-8 border-t border-white/15 grid grid-cols-2 md:grid-cols-4 gap-4 text-blue-100">
+          {/* Trust strip — sécurité condensée sous le CTA.
+              2×2 sur mobile (gap-y plus généreux), 4 cols sur desktop. */}
+          <div className="mt-10 pt-8 border-t border-white/15 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-5 md:gap-y-0 text-blue-100">
             {trustItems.map(({ Icon, label }) => (
-              <div key={label} className="flex items-center justify-center gap-2 text-xs">
-                <Icon size={14} className="text-blue-200 flex-shrink-0" />
-                <span className="font-medium">{label}</span>
+              <div key={label} className="flex items-center justify-center gap-2 text-[12px] md:text-xs">
+                <Icon size={15} className="text-blue-200 flex-shrink-0" />
+                <span className="font-medium whitespace-nowrap">{label}</span>
               </div>
             ))}
           </div>

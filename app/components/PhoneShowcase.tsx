@@ -565,33 +565,36 @@ function SceneCamera() {
           />
         ))}
 
-        {/* BL papier qui apparaît dans le cadre */}
+        {/* BL papier qui apparaît dans le cadre.
+            Lignes plus épaisses (5px) et moins nombreuses (4 au lieu de 7),
+            espacement plus généreux → lisible même quand le phone est scaled
+            à 0.82 sur petits écrans. */}
         <motion.div
           initial={{ opacity: 0, scale: 0.92, y: 12 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.5 }}
-          className="absolute inset-3 bg-white rounded-md p-2.5 shadow-2xl"
+          className="absolute inset-3 bg-white rounded-md p-3 shadow-2xl overflow-hidden"
         >
           {/* Header du BL */}
-          <div className="border-b border-slate-200 pb-1 mb-1.5">
-            <p className="text-[7px] font-bold text-slate-700">METRO CASH &amp; CARRY</p>
-            <p className="text-[6px] text-slate-400">BL n° 2024-08847</p>
+          <div className="border-b border-slate-200 pb-1.5 mb-2.5">
+            <p className="text-[8px] font-bold text-slate-700 leading-tight">METRO CASH &amp; CARRY</p>
+            <p className="text-[7px] text-slate-400 leading-tight">BL n° 2024-08847</p>
           </div>
-          {/* Lignes du BL */}
-          <div className="space-y-0.5">
-            {[78, 65, 82, 58, 70, 60, 73].map((w, i) => (
-              <div key={i} className="flex items-center gap-1">
-                <div className="h-[3px] bg-slate-200 rounded" style={{ width: `${w * 0.5}%` }} />
-                <div className="h-[3px] bg-slate-300 rounded w-6 ml-auto" />
+          {/* Lignes du BL — plus grosses, plus aérées */}
+          <div className="space-y-2">
+            {[80, 65, 75, 58].map((w, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className="h-[5px] bg-slate-200 rounded-full" style={{ width: `${w * 0.55}%` }} />
+                <div className="h-[5px] bg-blue-200 rounded-full w-8 ml-auto" />
               </div>
             ))}
           </div>
-          {/* Ligne de scan animée */}
+          {/* Ligne de scan animée — plus visible, glisse de haut en bas */}
           <motion.div
-            initial={{ y: 0, opacity: 0 }}
-            animate={{ y: [0, 90, 0], opacity: [0, 1, 0] }}
-            transition={{ delay: 1, duration: 2, ease: "easeInOut" }}
-            className="absolute inset-x-2 top-2 h-px bg-gradient-to-r from-transparent via-blue-500 to-transparent shadow-[0_0_10px_2px_rgba(59,130,246,0.6)]"
+            initial={{ top: 8, opacity: 0 }}
+            animate={{ top: [8, 130, 8], opacity: [0, 1, 0] }}
+            transition={{ delay: 0.9, duration: 2.2, ease: "easeInOut", repeat: 1 }}
+            className="absolute inset-x-2 h-[2px] bg-gradient-to-r from-transparent via-blue-500 to-transparent shadow-[0_0_14px_3px_rgba(59,130,246,0.7)]"
           />
         </motion.div>
       </div>
