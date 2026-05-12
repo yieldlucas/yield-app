@@ -18,14 +18,12 @@ export function DashboardHero({
   onScan,
   onCreateRecipe,
   recipesCount = 0,
-  recipesAttention = 0,
 }: {
   onScan: () => void;
   onCreateRecipe: () => void;
-  /** Nombre de recettes enregistrées (alimente le sous-texte de la Card B). */
+  /** Nombre de recettes enregistrées — adapte le label de la Card B
+   *  ("Créer une recette" si 0, "Voir mes recettes (N)" sinon). */
   recipesCount?: number;
-  /** Nombre de recettes en alerte (critique + warning). */
-  recipesAttention?: number;
 }) {
   return (
     <motion.div
@@ -98,11 +96,9 @@ export function DashboardHero({
             {recipesCount === 0 ? "Créer une recette" : `Voir mes recettes (${recipesCount})`}
             <ChevronRight size={14} className="-mr-1 transition-transform group-hover:translate-x-0.5" />
           </span>
-          {recipesAttention > 0 && (
-            <p className="mt-2 text-[11px] font-semibold text-rose-600">
-              {recipesAttention} plat{recipesAttention > 1 ? "s" : ""} à surveiller
-            </p>
-          )}
+          {/* Le sous-texte "X plats à surveiller" a été retiré pour éviter
+              la redondance avec CardHealthWidget qui détaille la santé juste
+              en dessous. Hero = action, Widget = status. */}
         </div>
       </Link>
     </motion.div>

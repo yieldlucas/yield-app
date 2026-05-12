@@ -1,19 +1,22 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Calculator, ChefHat, Download, HelpCircle, Salad, Settings, User,
+  Calculator, ChefHat, Download, HelpCircle, MoreHorizontal, Salad, Settings,
+  User,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { NotificationsBell } from "./NotificationsBell";
 import { type Alert } from "./types";
 
 /**
- * Header du dashboard : logo + actions (export CSV, billing portal, badge
- * quota, raccourci calculatrice, cloche notifs, profil). Sticky en haut. État
- * 100% contrôlé par les props — aucune logique de fetch ici.
+ * Header du dashboard : logo + actions. Sticky en haut. État 100% contrôlé
+ * par les props — aucune logique de fetch ici.
  *
- * La cloche est désormais cliquable et ouvre un drawer/popover listant les
- * alertes. Voir NotificationsBell.
+ * Sur mobile, les actions secondaires (Export CSV, billing portal, aide)
+ * sont regroupées dans un menu "..." pour libérer de l'espace. Les actions
+ * primaires restent inline : calculateur, recettes, cloche, profil.
  *
  * Le bouton calculatrice ne porte plus son propre état : on délègue
  * l'ouverture au parent (dashboard/page.tsx) pour que le DashboardHero du
@@ -53,11 +56,14 @@ export function DashboardHeader({
           </div>
           <span className="font-black text-base tracking-tight gradient-text">YIELD</span>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+
+        <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+          {/* Actions secondaires : inline sur desktop, dans le menu "..." sur mobile.
+              Ordre desktop : Export · Portail (si abonné) · Help */}
           <button
             onClick={onExportCsv}
             disabled={exportLoading || invoicesCount === 0}
-            className="text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="hidden sm:inline-flex text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Export comptable CSV"
             title="Export comptable CSV"
           >
@@ -71,7 +77,7 @@ export function DashboardHeader({
             <button
               onClick={onOpenPortal}
               disabled={portalLoading}
-              className="text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40"
+              className="hidden sm:inline-flex text-slate-400 hover:text-blue-600 transition-colors disabled:opacity-40"
               aria-label="Gérer l'abonnement"
               title="Gérer l'abonnement"
             >
@@ -82,6 +88,16 @@ export function DashboardHeader({
               )}
             </button>
           )}
+          <Link
+            href="/how-it-works"
+            className="hidden sm:inline-flex text-slate-400 hover:text-blue-600 transition-colors"
+            aria-label="Comment ça marche"
+            title="Comment ça marche"
+          >
+            <HelpCircle size={18} />
+          </Link>
+
+          {/* Actions primaires — toujours visibles, même sur mobile */}
           {usage && <UsageBadge usage={usage} onClick={onQuotaClick} />}
           <button
             onClick={onOpenCalculator}
@@ -102,24 +118,134 @@ export function DashboardHeader({
           </Link>
           <NotificationsBell alerts={alerts} onAlertClick={onAlertClick} />
           <Link
-            href="/how-it-works"
-            className="text-slate-400 hover:text-blue-600 transition-colors hidden sm:inline-flex"
-            aria-label="Comment ça marche"
-            title="Comment ça marche"
-          >
-            <HelpCircle size={18} />
-          </Link>
-          <Link
             href="/dashboard/profile"
-            className="text-slate-400 hover:text-blue-600 transition-colors"
+            className="hidden sm:inline-flex text-slate-400 hover:text-blue-600 transition-colors"
             aria-label="Mon profil"
             title="Mon profil"
           >
             <User size={18} />
           </Link>
+
+          {/* Menu "..." mobile uniquement — regroupe Export / Portail / Help / Profil */}
+          <MobileMoreMenu
+            onExportCsv={onExportCsv}
+            exportLoading={exportLoading}
+            exportDisabled={invoicesCount === 0}
+            isSubscribed={isSubscribed}
+            onOpenPortal={onOpenPortal}
+            portalLoading={portalLoading}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Menu "..." mobile ──────────────────────────────────────────────────────
+// Caché sur desktop (sm:hidden). Sur mobile, regroupe les actions secondaires
+// pour libérer de l'espace dans la barre d'action principale.
+function MobileMoreMenu({
+  onExportCsv, exportLoading, exportDisabled,
+  isSubscribed, onOpenPortal, portalLoading,
+}: {
+  onExportCsv: () => void;
+  exportLoading: boolean;
+  exportDisabled: boolean;
+  isSubscribed: boolean;
+  onOpenPortal: () => void;
+  portalLoading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Fermeture au clic en dehors (le user touche ailleurs sur l'écran).
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="relative sm:hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-slate-400 hover:text-blue-600 transition-colors p-0.5"
+        aria-label="Plus d'actions"
+        aria-expanded={open}
+      >
+        <MoreHorizontal size={18} />
+      </button>
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-8 z-50 min-w-[200px] rounded-xl border border-slate-200 bg-white shadow-xl overflow-hidden"
+            role="menu"
+          >
+            <MenuItem
+              icon={<Download size={15} />}
+              label={exportLoading ? "Export en cours…" : "Export CSV"}
+              onClick={() => { setOpen(false); onExportCsv(); }}
+              disabled={exportLoading || exportDisabled}
+            />
+            {isSubscribed && (
+              <MenuItem
+                icon={<Settings size={15} />}
+                label={portalLoading ? "Ouverture…" : "Gérer mon abonnement"}
+                onClick={() => { setOpen(false); onOpenPortal(); }}
+                disabled={portalLoading}
+              />
+            )}
+            <div className="h-px bg-slate-100" />
+            <MenuItem
+              icon={<User size={15} />}
+              label="Mon profil"
+              href="/dashboard/profile"
+              onClick={() => setOpen(false)}
+            />
+            <MenuItem
+              icon={<HelpCircle size={15} />}
+              label="Comment ça marche"
+              href="/how-it-works"
+              onClick={() => setOpen(false)}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MenuItem({
+  icon, label, onClick, href, disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  disabled?: boolean;
+}) {
+  const baseClass = "w-full px-4 py-3 flex items-center gap-3 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors text-left disabled:opacity-40 disabled:cursor-not-allowed";
+  if (href) {
+    return (
+      <Link href={href} onClick={onClick} className={baseClass} role="menuitem">
+        <span className="text-slate-400">{icon}</span>
+        {label}
+      </Link>
+    );
+  }
+  return (
+    <button onClick={onClick} disabled={disabled} className={baseClass} role="menuitem">
+      <span className="text-slate-400">{icon}</span>
+      {label}
+    </button>
   );
 }
 

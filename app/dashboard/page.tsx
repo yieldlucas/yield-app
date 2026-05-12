@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { addToStack, listStack, removeFromStack, clearStack, type StackItem } from "@/lib/scan-stack";
@@ -21,7 +21,6 @@ import { BatchOverlay } from "./_components/BatchOverlay";
 import { QuotaExceededModal } from "./_components/QuotaExceededModal";
 import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
-import { EmptyScanCTA } from "./_components/EmptyScanCTA";
 import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
 import { CardHealthWidget } from "./_components/CardHealthWidget";
 import { DashboardHero } from "./_components/DashboardHero";
@@ -46,7 +45,6 @@ const CAMERA_GUIDE_SEEN_KEY = "yield_camera_guide_seen";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const [user, setUser] = useState<{ email: string } | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
@@ -334,7 +332,6 @@ export default function DashboardPage() {
     void listStack().then(setStack);
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
-      setUser({ email: session.user.email ?? "" });
       setUserId(session.user.id);
       setLoading(false);
       void reloadUsage(); void reloadInvoices(); void reloadAlerts();
@@ -396,7 +393,17 @@ export default function DashboardPage() {
 
   // ─── Dérivés pour le rendu ─────────────────────────────────
   const unreadCount = alerts.filter((a) => !a.is_read).length;
-  const firstName = user?.email?.split("@")[0] ?? "";
+
+  /** Nom d'accueil intelligent : priorité au nom du restaurant (saisi à
+   *  l'onboarding), fallback "Chef". On évite délibérément le préfixe
+   *  d'email qui produit des greetings moches ("Bonjour, lucasyieldapp"). */
+  const displayName = restaurantName.trim() || "Chef";
+
+  /** Salutation time-aware : "Bonjour" le matin, "Bon service" en pleine
+   *  journée, "Bonsoir" en soirée. Reflète mieux le rythme d'un chef qui
+   *  ouvre Yield à différents moments (livraisons matin, contrôle service). */
+  const hour = new Date().getHours();
+  const timeGreeting = hour < 11 ? "Bonjour" : hour < 18 ? "Bon service" : "Bonsoir";
   const refreshBilling = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
@@ -422,14 +429,17 @@ export default function DashboardPage() {
       <div className="max-w-lg mx-auto px-5 pt-6 space-y-8">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
           <h1 className="text-xl font-bold text-slate-900 mb-0.5">
-            Bonjour{firstName ? `, ${firstName}` : ""} 👋
+            {timeGreeting}, {displayName} 👋
           </h1>
+          {/* Sous-titre neutre — les chiffres précis (alertes, factures) sont
+              déjà visibles dans MonthlyStatsStrip + cloche + Hero. On évite
+              de répéter la même info à 4 endroits. */}
           <p className="text-slate-400 text-sm">
-            {alerts.length > 0
-              ? `${unreadCount} alerte${unreadCount > 1 ? "s" : ""} à examiner ce matin`
-              : invoices.length > 0
-                ? "Votre rendement est stable aujourd'hui"
-                : "Scannez votre premier bon de livraison pour démarrer"}
+            {invoices.length === 0
+              ? "Scannez votre premier bon de livraison pour démarrer."
+              : unreadCount > 0
+                ? `${unreadCount} alerte${unreadCount > 1 ? "s" : ""} à examiner.`
+                : "Tour d'horizon de votre cuisine."}
           </p>
         </motion.div>
 
@@ -441,24 +451,38 @@ export default function DashboardPage() {
         )}
         <BillingErrorBanner message={billingError} onRefresh={refreshBilling} onDismiss={() => setBillingError(null)} />
 
-        {/* KPIs synthétiques du mois — caché tant qu'aucune facture processed. */}
-        <MonthlyStatsStrip stats={monthlyStats} alertsCount={alerts.length} />
-
-        {/* Hero : deux faces de Yield mises en parallèle (Le Moteur = scans,
-            Le Pilote = recettes). Card B redirige vers /dashboard/recipes si
-            l'user a déjà des recettes, ou ouvre direct la calculatrice sinon. */}
+        {/* Hero — action-first : on remonte les CTAs scan/recettes AVANT
+            les KPIs passifs. L'objectif est qu'un chef pressé voit d'abord
+            "que peut-il faire" puis "où il en est". */}
         <DashboardHero
           onScan={openCamera}
           onCreateRecipe={() => { setCalcSeed(null); setCalcOpen(true); }}
           recipesCount={recipesStats?.total ?? 0}
-          recipesAttention={(recipesStats?.critical ?? 0) + (recipesStats?.warning ?? 0)}
         />
 
-        {/* Widget Santé de votre Carte — caché tant qu'aucune recette n'est
-            enregistrée. Détaille la santé sous le Hero quand pertinent. */}
-        <CardHealthWidget />
+        {/* Empty state additionnel : si aucune facture, on offre l'option
+            "Importer un fichier" en lien discret. L'option scan est déjà
+            portée par DashboardHero Card A — pas de gros bouton redondant. */}
+        {invoices.length === 0 && (
+          <motion.button
+            onClick={openGallery}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="w-full py-2.5 rounded-xl border border-dashed border-slate-200 text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50/30 text-sm flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <FolderOpen size={14} />
+            Importer un fichier existant (ancienne facture)
+          </motion.button>
+        )}
 
-        {invoices.length === 0 && <EmptyScanCTA onOpenCamera={openCamera} onOpenGallery={openGallery} />}
+        {/* KPIs synthétiques du mois — caché tant qu'aucune facture processed.
+            Position après le Hero : info passive en seconde lecture. */}
+        <MonthlyStatsStrip stats={monthlyStats} alertsCount={alerts.length} />
+
+        {/* Widget Santé de votre Carte — caché tant qu'aucune recette n'est
+            enregistrée. Détail concret après les KPIs synthétiques. */}
+        <CardHealthWidget />
 
         {/* Les alertes de prix vivent désormais dans la cloche du header
             (NotificationsBell). La timeline ne contient plus que des
@@ -474,10 +498,12 @@ export default function DashboardPage() {
           />
         )}
 
-        {!loading && alerts.length === 0 && invoices.length > 0 && (
+        {/* Carte de réassurance "tout va bien" — affichée seulement si tout
+            est sain : factures + 0 alerte + recettes pas critiques. */}
+        {!loading && alerts.length === 0 && invoices.length > 0 && (recipesStats?.critical ?? 0) === 0 && (
           <div className="card rounded-2xl p-6 text-center">
-            <CheckCircle2 size={28} className="text-blue-500 mx-auto mb-3" />
-            <p className="text-slate-900 font-semibold mb-1">Rendement nominal.</p>
+            <CheckCircle2 size={28} className="text-emerald-500 mx-auto mb-3" />
+            <p className="text-slate-900 font-semibold mb-1">Marges saines.</p>
             <p className="text-slate-400 text-sm">Aucune dérive matière détectée. Votre food cost est stable.</p>
           </div>
         )}
