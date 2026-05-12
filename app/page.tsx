@@ -5,10 +5,11 @@ import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion"
 import {
   Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
   TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight, ArrowLeft,
-  CheckCircle2, Star, Menu, X, Scale, Timer, MessageCircle, KeyRound,
+  CheckCircle2, Menu, X, Scale, Timer, MessageCircle, KeyRound,
   Salad, Sliders, LineChart,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { PhoneShowcase } from "./components/PhoneShowcase";
 import { supabase } from "@/lib/supabase-browser";
 
 // ─── Animated counter ────────────────────────────────────
@@ -208,42 +209,14 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           ))}
         </motion.div>
 
-        {/* Floating mockup */}
+        {/* Showcase iPhone animé — 5 scènes du parcours produit en boucle */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.9, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-16 max-w-sm mx-auto animate-float"
+          transition={{ delay: 0.9, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+          className="mt-20"
         >
-          <div className="glass card-hover rounded-3xl p-5 text-left">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-2 h-2 rounded-full bg-blue-500" />
-              <span className="text-xs text-slate-500 font-medium">Analyse BL — Metro Cash &amp; Carry</span>
-            </div>
-            <div className="space-y-2.5">
-              {[
-                { name: "Filet de saumon", change: "+14.2%", bad: true },
-                { name: "Tomates cerises", change: "+3.5%", bad: true },
-                { name: "Beurre doux AOP", change: "−1.0%", bad: false },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <span className="text-sm text-slate-700">{item.name}</span>
-                  <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded-lg ${
-                    item.bad ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-600"
-                  }`}>{item.change}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 pt-4 border-t border-slate-100 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-500">Impact rendement estimé</span>
-                <span className="font-bold font-mono text-red-600">−184 €/mois</span>
-              </div>
-              <div className="btn-primary text-center text-xs py-2 rounded-xl">
-                2 alertes rendement générées
-              </div>
-            </div>
-          </div>
+          <PhoneShowcase />
         </motion.div>
       </motion.div>
 
@@ -889,84 +862,6 @@ function BenefitsSection() {
   );
 }
 
-// ─── Testimonials ─────────────────────────────────────────
-function TestimonialsSection() {
-  const quotes = [
-    {
-      initials: "TM",
-      name: "Thomas M.",
-      role: "Chef-propriétaire",
-      restaurant: "Le Comptoir du Marché",
-      location: "Lyon 2e",
-      quote: "J'ai repéré une hausse de 15% sur la volaille deux jours après la livraison. Avant YIELD, je l'aurais vu fin de mois en bouclant la compta, avec 400 couverts déjà servis à perte.",
-    },
-    {
-      initials: "SR",
-      name: "Sarah R.",
-      role: "Cheffe exécutive",
-      restaurant: "Brasserie Nord",
-      location: "Paris 9e",
-      quote: "Plus de paperasse à classer à 1h du matin après le service. Je photographie les BL pendant que le commis range la chambre froide, c'est tout. Mon comptable est enfin content.",
-    },
-    {
-      initials: "KB",
-      name: "Karim B.",
-      role: "Chef",
-      restaurant: "L'Atelier des Saveurs",
-      location: "Marseille 7e",
-      quote: "Huile d'olive +8% en trois semaines, personne ne m'avait prévenu. YIELD m'a dit : « votre tapenade perd 2.1 points de marge ». J'ai appelé le fournisseur le jour même.",
-    },
-  ];
-
-  return (
-    <section className="py-24 px-5">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-14"
-        >
-          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Ils ont repris le contrôle</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">
-            Des chefs qui ne servent plus <span className="gradient-text">à perte</span>
-          </h2>
-        </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-5">
-          {quotes.map((q, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1, duration: 0.6 }}
-              className="card rounded-2xl p-6 card-hover flex flex-col"
-            >
-              <div className="flex items-center gap-1 mb-4">
-                {Array(5).fill(0).map((_, s) => <Star key={s} size={13} className="text-amber-400 fill-amber-400" />)}
-              </div>
-              <blockquote className="text-slate-700 text-sm leading-relaxed mb-6 flex-1">
-                « {q.quote} »
-              </blockquote>
-              <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-                <div className="w-10 h-10 btn-primary rounded-xl flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-xs font-bold">{q.initials}</span>
-                </div>
-                <div className="min-w-0">
-                  <p className="text-slate-900 text-sm font-semibold truncate">{q.name}</p>
-                  <p className="text-slate-400 text-xs truncate">{q.role} · {q.restaurant}</p>
-                  <p className="text-slate-300 text-xs">{q.location}</p>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 // ─── Story ────────────────────────────────────────────────
 function StorySection() {
   return (
@@ -997,10 +892,6 @@ function StorySection() {
           <p className="text-slate-500 leading-relaxed">
             Aujourd&apos;hui, pendant que vous dressez, que vous gérez la salle, que vous formez vos commis, YIELD lit vos livraisons et veille sur votre marge. Silencieusement.
           </p>
-          <div className="flex items-center gap-1 mt-8">
-            {Array(5).fill(0).map((_, i) => <Star key={i} size={16} className="text-amber-400 fill-amber-400" />)}
-            <span className="text-slate-400 text-sm ml-2">Utilisé par des chefs en France, Belgique et Suisse</span>
-          </div>
         </motion.div>
       </div>
     </section>
@@ -1651,8 +1542,6 @@ export default function LandingPage() {
         <ROISection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <BenefitsSection />
-        <div className="divider-gradient max-w-6xl mx-auto" />
-        <TestimonialsSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <StorySection />
         <div className="divider-gradient max-w-6xl mx-auto" />
