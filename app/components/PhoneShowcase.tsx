@@ -11,20 +11,22 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Battery, Camera, ChefHat, ChevronRight, Salad, ScanLine, Signal, Sparkles,
-  TrendingDown, TrendingUp, Wifi,
+  Battery, Camera, ChefHat, ChevronLeft, ChevronRight, Salad, ScanLine, Signal,
+  Sparkles, TrendingDown, TrendingUp, Wifi,
 } from "lucide-react";
 
 const SCENES = ["dashboard", "tap", "camera", "processing", "recipes"] as const;
 type Scene = typeof SCENES[number];
 
-// Durée de chaque scène (ms). Total boucle ≈ 13s.
+// Durée de chaque scène (ms). Ralenti suite au feedback user "trop rapide".
+// Total boucle ≈ 28s — laisse le temps de lire la caption + observer l'anim
+// interne. L'user peut accélérer via les flèches prev/next.
 const SCENE_DURATIONS: Record<Scene, number> = {
-  dashboard: 3000,
-  tap: 1400,
-  camera: 2800,
-  processing: 3200,
-  recipes: 3400,
+  dashboard: 5500,
+  tap: 3500,
+  camera: 5500,
+  processing: 6500,
+  recipes: 7000,
 };
 
 const SCENE_LABELS: Record<Scene, string> = {
@@ -102,6 +104,11 @@ export function PhoneShowcase() {
   const caption = SCENE_CAPTIONS[scene];
   const idx = SCENES.indexOf(scene);
 
+  // Helpers nav manuelle. Le setScene relance le useEffect → l'auto-timer
+  // se reset à la pleine durée de la nouvelle scène (l'user reprend le contrôle).
+  const goPrev = () => setScene(SCENES[(idx - 1 + SCENES.length) % SCENES.length]);
+  const goNext = () => setScene(SCENES[(idx + 1) % SCENES.length]);
+
   return (
     <div
       ref={containerRef}
@@ -151,25 +158,46 @@ export function PhoneShowcase() {
           </span>
         </div>
 
-        {/* Step pills cliquables (saut direct à une scène) */}
-        <div className="mt-4 flex items-center gap-1.5 justify-center md:justify-start">
-          {SCENES.map((s) => (
-            <button
-              key={s}
-              onClick={() => setScene(s)}
-              aria-label={`Voir l'étape ${SCENE_LABELS[s]}`}
-              className={`h-1.5 rounded-full transition-all duration-500 ${
-                s === scene
-                  ? "w-10 bg-blue-500"
-                  : "w-2 bg-slate-300 hover:bg-slate-400"
-              }`}
-            />
-          ))}
+        {/* Navigation : flèches prev/next + step pills cliquables */}
+        <div className="mt-5 flex items-center gap-3 justify-center md:justify-start">
+          <button
+            onClick={goPrev}
+            aria-label="Étape précédente"
+            className="w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm transition-all flex items-center justify-center"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="flex items-center gap-1.5">
+            {SCENES.map((s) => (
+              <button
+                key={s}
+                onClick={() => setScene(s)}
+                aria-label={`Voir l'étape ${SCENE_LABELS[s]}`}
+                className={`h-1.5 rounded-full transition-all duration-500 ${
+                  s === scene
+                    ? "w-10 bg-blue-500"
+                    : "w-2 bg-slate-300 hover:bg-slate-400"
+                }`}
+              />
+            ))}
+          </div>
+          <button
+            onClick={goNext}
+            aria-label="Étape suivante"
+            className="w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm transition-all flex items-center justify-center"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
       {/* ── Phone (droite desktop, en haut mobile) ── */}
-      <div className="order-1 md:order-2 relative flex justify-center">
+      {/* Perspective sur le wrapper pour que le rotateX du phone donne un
+          vrai effet 3D (tilt forward/back) au lieu d'un applatissement 2D. */}
+      <div
+        className="order-1 md:order-2 relative flex justify-center"
+        style={{ perspective: "1400px" }}
+      >
         {/* Glow décoratif derrière le phone */}
         <div
           aria-hidden
@@ -178,9 +206,22 @@ export function PhoneShowcase() {
           <div className="w-[360px] h-[360px] rounded-full bg-blue-500/15 blur-[80px] animate-pulse-slow" />
         </div>
 
+        {/* Mouvement vivant : translateY + rotateZ + rotateX sur 3 périodes
+            différentes (7s / 9s / 11s) — les cycles ne se synchronisent jamais
+            exactement, ce qui donne un mouvement organique "flottant" jamais
+            répétitif visuellement. Perspective sur le parent pour le tilt 3D. */}
         <motion.div
-          animate={{ y: [0, -6, 0] }}
-          transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+          animate={{
+            y: [0, -10, 0],
+            rotateZ: [-0.8, 0.8, -0.8],
+            rotateX: [1.2, -1.2, 1.2],
+          }}
+          transition={{
+            y: { repeat: Infinity, duration: 7, ease: "easeInOut" },
+            rotateZ: { repeat: Infinity, duration: 9, ease: "easeInOut" },
+            rotateX: { repeat: Infinity, duration: 11, ease: "easeInOut" },
+          }}
+          style={{ transformStyle: "preserve-3d" }}
           className="relative"
         >
           <PhoneFrame>
