@@ -18,6 +18,7 @@ import {
   Save, Sliders, Trash2, TrendingDown, TrendingUp, X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
+import { PageSpinner } from "@/app/dashboard/_components/PageSpinner";
 import {
   fetchRecipeDetail,
   fetchProductUsageInOtherRecipes,
@@ -28,7 +29,6 @@ import {
   deleteRecipe,
   unitConversionFactor,
   type RecipeDetail,
-  type RecipeHealth,
   type RecipeIngredientRow,
 } from "../../_lib/recipes-data";
 
@@ -134,13 +134,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
     };
   }, [recipe, drafts]);
 
-  if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="w-6 h-6 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
-      </main>
-    );
-  }
+  if (loading) return <PageSpinner />;
   if (!recipe || !sim) {
     return (
       <main className="min-h-screen p-8 text-center bg-slate-50">

@@ -52,7 +52,7 @@ export default function TrialReminderEmail({
           </Section>
 
           <Heading as="h1" style={h1}>
-            Chef, votre essai se termine dans {daysLeft} jour{daysLeft > 1 ? "s" : ""}
+            {firstName}, votre essai se termine dans {daysLeft} jour{daysLeft > 1 ? "s" : ""}
           </Heading>
 
           <Text style={text}>

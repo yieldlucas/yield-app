@@ -109,7 +109,7 @@ export function InstallBanner() {
               </p>
             ) : (
               <p className="text-slate-500 text-xs">
-                Un tap, un scan, un rendement préservé. Même hors connexion dans votre cuisine.
+                Un tap, un scan, une marge préservée. Même hors connexion dans votre cuisine.
               </p>
             )}
           </div>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, use, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -11,6 +10,7 @@ import {
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
 import { FlashCalculator, type CalculatorInitialIngredient } from "@/app/dashboard/_components/FlashCalculator";
+import { PageSpinner } from "@/app/dashboard/_components/PageSpinner";
 
 // Aligné avec dashboard/page.tsx — code couleur strict variation
 const VARIATION_ALERT_PCT = 7;
@@ -74,7 +74,6 @@ function variationStyle(pct: number | null): { tone: string; arrow: string } {
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: invoiceId } = use(params);
-  const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceFull | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -289,13 +288,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   };
 
   // ── States UI ───
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F7F9FF" }}>
-        <div className="w-8 h-8 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <PageSpinner />;
   if (error || !invoice) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6" style={{ background: "#F7F9FF" }}>

@@ -10,6 +10,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { clearStack } from "@/lib/scan-stack";
+import { PageSpinner } from "../_components/PageSpinner";
 
 type Profile = {
   email: string;
@@ -158,15 +159,7 @@ export default function ProfilePage() {
     router.replace("/");
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F7F9FF" }}>
-        <div className="w-10 h-10 rounded-2xl btn-primary flex items-center justify-center animate-pulse">
-          <ChefHat size={18} className="text-white" />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <PageSpinner />;
 
   return (
     <div className="min-h-screen pb-16" style={{ background: "#F7F9FF" }}>
