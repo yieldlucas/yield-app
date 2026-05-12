@@ -14,21 +14,32 @@ const STORAGE_KEY = "yield_scan_reminder_dismissed_at";
 /** Délai de re-trigger après dismiss : 3 jours. Au-delà, on re-propose
  *  pour ne pas laisser un chef en silence avec des prix obsolètes. */
 const REDISMISS_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
+/** Période de grâce après le tout premier scan : pas de reproche au nouveau
+ *  user. Un chef qui scanne lundi sa 1ère facture ne doit pas voir mercredi
+ *  "Seulement 1 BL ces 7 jours" — c'est techniquement vrai mais c'est faux
+ *  pédagogiquement. Il faut au moins une semaine pour mesurer un rythme. */
+const NEW_USER_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export function ScanReminderBanner({
   recentScans,
   threshold = 3,
   totalInvoices,
+  firstScanAt,
   onDismiss,
 }: {
   recentScans: number;
   threshold?: number;
   totalInvoices: number;
+  /** Date du tout premier scan processed du user. Sert à appliquer la période
+   *  de grâce — sans ça le banner s'affiche dès le 2e jour d'un nouveau compte. */
+  firstScanAt: Date | null;
   onDismiss: () => void;
 }) {
-  // Caché si l'user n'a aucune facture (empty state primaire) OU si scans
-  // suffisants OU si dismissé récemment.
+  // Caché si l'user n'a aucune facture (empty state primaire) OU si dans la
+  // période de grâce de 7j après le 1er scan OU si scans suffisants OU si
+  // dismissé récemment.
   if (totalInvoices === 0) return null;
+  if (firstScanAt && Date.now() - firstScanAt.getTime() < NEW_USER_GRACE_MS) return null;
   if (recentScans >= threshold) return null;
   if (typeof window !== "undefined") {
     const raw = localStorage.getItem(STORAGE_KEY);

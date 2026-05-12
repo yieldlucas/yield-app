@@ -3,7 +3,7 @@
 // Dashboard chef — orchestration top-level. Le JSX et la logique métier
 // vivent dans /_components, /_hooks, /_lib pour rester compact ici.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -25,6 +25,7 @@ import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
 import { CardHealthWidget } from "./_components/CardHealthWidget";
 import { DashboardHero } from "./_components/DashboardHero";
 import { ScanReminderBanner } from "./_components/ScanReminderBanner";
+import { FirstScanCelebration } from "./_components/FirstScanCelebration";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
 import { fetchInvoiceLinesForCalc, fetchRecentScansCount } from "./_lib/dashboard-data";
@@ -88,6 +89,12 @@ export default function DashboardPage() {
   // Permet de masquer le banner après dismiss (la persistance 3 jours est
   // gérée en localStorage côté ScanReminderBanner).
   const [reminderDismissed, setReminderDismissed] = useState(false);
+  // Célébration premier scan : trigger une seule fois quand le count de
+  // factures processed passe de 0 à 1. Le toast lui-même gère sa
+  // persistance localStorage (jamais re-show).
+  const [celebrateFirstScan, setCelebrateFirstScan] = useState(false);
+  // Ref pour détecter la transition 0→1+ sans piège de state update.
+  const prevProcessedCountRef = useRef<number>(0);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   // Signal partagé avec processBatch : flippé à true au démontage pour
@@ -327,6 +334,17 @@ export default function DashboardPage() {
     void runBatch(queued);
   };
 
+  // ─── Détection 1er scan : transition 0 → ≥1 facture processed ──
+  // Le composant FirstScanCelebration filtre lui-même via localStorage donc
+  // ne se montre qu'une seule fois à vie même si le ref se réactive.
+  useEffect(() => {
+    const processedCount = invoices.filter((i) => i.status === "processed").length;
+    if (prevProcessedCountRef.current === 0 && processedCount >= 1) {
+      setCelebrateFirstScan(true);
+    }
+    prevProcessedCountRef.current = processedCount;
+  }, [invoices]);
+
   // ─── Cleanup : flippe le signal d'annulation au démontage ──
   // Sans ça, un user qui quitte le dashboard pendant un batch verrait React
   // warner "Can't perform a state update on an unmounted component" car les
@@ -413,6 +431,22 @@ export default function DashboardPage() {
    *  ouvre Yield à différents moments (livraisons matin, contrôle service). */
   const hour = new Date().getHours();
   const timeGreeting = hour < 11 ? "Bonjour" : hour < 18 ? "Bon service" : "Bonsoir";
+
+  /** Date du 1er scan processed — sert à la période de grâce du
+   *  ScanReminderBanner (pas de reproche aux nouveaux comptes). Dérivé
+   *  de la liste des factures déjà en state, pas de requête additionnelle. */
+  const firstScanAt = useMemo<Date | null>(() => {
+    const processed = invoices.filter((i) => i.status === "processed");
+    if (processed.length === 0) return null;
+    // invoices est trié desc par created_at, le dernier element a la date
+    // la plus ancienne. On parse invoice_date (fallback created_at via le
+    // mapping fetchInvoices déjà fait).
+    const dates = processed
+      .map((i) => new Date(i.invoice_date).getTime())
+      .filter((t) => Number.isFinite(t));
+    if (dates.length === 0) return null;
+    return new Date(Math.min(...dates));
+  }, [invoices]);
   const refreshBilling = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
@@ -475,6 +509,7 @@ export default function DashboardPage() {
           <ScanReminderBanner
             recentScans={recentScans}
             totalInvoices={invoices.length}
+            firstScanAt={firstScanAt}
             onDismiss={() => setReminderDismissed(true)}
           />
         )}
@@ -578,6 +613,10 @@ export default function DashboardPage() {
         open={calcOpen}
         onClose={() => { setCalcOpen(false); setCalcSeed(null); }}
         initialIngredients={calcSeed ?? undefined}
+      />
+      <FirstScanCelebration
+        show={celebrateFirstScan}
+        onDismiss={() => setCelebrateFirstScan(false)}
       />
     </div>
   );
