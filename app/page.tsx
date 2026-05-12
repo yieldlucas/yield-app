@@ -601,7 +601,7 @@ function ROISection() {
               </p>
             </div>
             <a
-              href="mailto:chef@yieldapp.fr?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
+              href="mailto:lucasyieldapp@gmail.com?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
               className="flex-shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 text-sm font-semibold transition-colors whitespace-nowrap"
             >
               Me prévenir
@@ -780,7 +780,7 @@ function FAQSection() {
         >
           Une autre question ?{" "}
           <a
-            href="mailto:chef@yieldapp.fr"
+            href="mailto:lucasyieldapp@gmail.com"
             className="text-blue-600 font-semibold hover:underline"
           >
             Écrivez à Lucas, fondateur

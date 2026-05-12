@@ -26,6 +26,11 @@ import TrialReminderEmail, {
 /** Adresse expéditrice. Doit appartenir au domaine vérifié dans Resend. */
 const FROM = "Yield <chef@yield.restaurant>";
 
+/** Adresse de réponse. Quand un chef répond au mail welcome / J-3, ça arrive
+ *  ici (boîte Gmail perso de Lucas) plutôt que sur chef@yield.restaurant qui
+ *  n'est qu'une adresse d'envoi technique. */
+const REPLY_TO = "Lucas (Yield) <lucasyieldapp@gmail.com>";
+
 /**
  * Lazy singleton client Resend. Retourne null si la clé API n'est pas
  * configurée — l'appel est skippé proprement plutôt que de throw.
@@ -61,6 +66,7 @@ async function sendEmail(opts: {
     const { error } = await resend.emails.send({
       from: FROM,
       to: opts.to,
+      replyTo: REPLY_TO,
       subject: opts.subject,
       html: opts.html,
       text: opts.text,

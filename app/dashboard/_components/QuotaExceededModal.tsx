@@ -65,7 +65,7 @@ export function QuotaExceededModal({
             multi-établissements). <strong>39,99 € HT/mois.</strong>
           </p>
           <a
-            href="mailto:chef@yieldapp.fr?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
+            href="mailto:lucasyieldapp@gmail.com?subject=Liste%20d'attente%20Forfait%20Pro&body=Bonjour%20Lucas%2C%20je%20suis%20int%C3%A9ress%C3%A9%20par%20le%20futur%20forfait%20Pro%20de%20Yield."
             className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-blue-700 hover:text-blue-800"
           >
             <Mail size={11} /> Me prévenir à l&apos;ouverture

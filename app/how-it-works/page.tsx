@@ -150,8 +150,8 @@ export default function HowItWorksPage() {
 
         <p className="text-center text-[12px] text-slate-400 mt-10">
           Une question ?
-          <a href="mailto:chef@yieldapp.fr" className="underline ml-1 hover:text-slate-600">
-            chef@yieldapp.fr
+          <a href="mailto:lucasyieldapp@gmail.com" className="underline ml-1 hover:text-slate-600">
+            lucasyieldapp@gmail.com
           </a>
           {" · "}
           <Link href="/dashboard" className="underline hover:text-slate-600">
