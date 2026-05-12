@@ -8,14 +8,14 @@ export const runtime = "nodejs";
 const TRIAL_DAYS = 14;
 
 /** URL publique de l'app pour les redirects Stripe. Priorité :
- *  1. NEXT_PUBLIC_APP_URL (à set sur Vercel = https://yieldapp.fr)
+ *  1. NEXT_PUBLIC_APP_URL (à set sur Vercel = https://www.yieldapp.fr)
  *  2. header origin (utile en dev local + previews Vercel)
  *  3. fallback prod yieldapp.fr (jamais localhost en prod) */
 function getAppUrl(req: NextRequest): string {
   return (
     process.env.NEXT_PUBLIC_APP_URL
     ?? req.headers.get("origin")
-    ?? "https://yieldapp.fr"
+    ?? "https://www.yieldapp.fr"
   );
 }
 

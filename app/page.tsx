@@ -1481,8 +1481,8 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
                       </form>
                       <p className="text-center text-slate-400 text-xs mt-5">
                         En continuant, vous acceptez nos{" "}
-                        <a href="#" className="underline hover:text-slate-600">CGU</a> et notre{" "}
-                        <a href="#" className="underline hover:text-slate-600">politique de confidentialité</a>.
+                        <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">CGU</a> et notre{" "}
+                        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-slate-600">politique de confidentialité</a>.
                       </p>
                     </motion.div>
                   )}

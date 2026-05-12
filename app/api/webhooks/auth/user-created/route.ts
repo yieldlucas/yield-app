@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
  *   - Events         : INSERT
  *   - Type           : HTTP Request
  *   - Method         : POST
- *   - URL            : https://yieldapp.fr/api/webhooks/auth/user-created
+ *   - URL            : https://www.yieldapp.fr/api/webhooks/auth/user-created
  *   - HTTP Headers   : Authorization: Bearer ${SUPABASE_WEBHOOK_SECRET}
  *
  * Le secret partagé `SUPABASE_WEBHOOK_SECRET` doit être set dans Vercel ET
@@ -73,10 +73,10 @@ export async function POST(req: NextRequest) {
 
     // Le header origin est absent quand Supabase appelle ce webhook (serveur
     // à serveur). On privilégie NEXT_PUBLIC_APP_URL pour que le bouton du
-    // mail welcome pointe sur https://yieldapp.fr et pas un fallback hasardeux.
+    // mail welcome pointe sur https://www.yieldapp.fr et pas un fallback hasardeux.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? req.headers.get("origin")
-      ?? "https://yieldapp.fr";
+      ?? "https://www.yieldapp.fr";
     const dashboardUrl = `${appUrl}/dashboard`;
 
     const sent = await sendWelcomeEmail(email, { firstName, dashboardUrl });

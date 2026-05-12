@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
     const appUrl =
       process.env.NEXT_PUBLIC_APP_URL
       ?? req.headers.get("origin")
-      ?? "https://yieldapp.fr";
+      ?? "https://www.yieldapp.fr";
 
     const session = await stripe.billingPortal.sessions.create({
       customer: customerId,

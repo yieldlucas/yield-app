@@ -10,20 +10,38 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  // metadataBase : indispensable pour que les URLs relatives (OG image,
+  // alternates.canonical, etc.) soient résolues correctement par les
+  // crawlers Google / réseaux sociaux. Sans ça, Next.js émet un warning et
+  // les liens OG peuvent finir en localhost en prod.
+  metadataBase: new URL("https://www.yieldapp.fr"),
   title: "YIELD — Rendement Garanti",
   description:
     "Photographiez vos bons de livraison. L'IA analyse les prix matière et vous alerte en temps réel quand votre rendement est menacé.",
   keywords: ["restaurant", "rendement", "marge", "bon de livraison", "fournisseur", "inflation", "food cost"],
   manifest: "/manifest.webmanifest",
+  // Canonique sur www. pour signaler à Google que yieldapp.fr et
+  // www.yieldapp.fr sont la même ressource (évite duplicate content).
+  alternates: {
+    canonical: "https://www.yieldapp.fr",
+  },
   appleWebApp: {
     capable: true,
     title: "YIELD",
     statusBarStyle: "black-translucent",
   },
   openGraph: {
-    title: "YIELD",
+    title: "YIELD — Rendement Garanti",
     description: "La seule app qui surveille votre rendement en temps réel.",
     type: "website",
+    url: "https://www.yieldapp.fr",
+    siteName: "YIELD",
+    locale: "fr_FR",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "YIELD — Rendement Garanti",
+    description: "L'IA qui surveille vos marges en cuisine.",
   },
 };
 

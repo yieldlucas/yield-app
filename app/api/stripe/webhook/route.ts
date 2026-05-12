@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Healthcheck — permet de tester depuis un navigateur que la route existe.
- * GET https://yieldapp.fr/api/stripe/webhook → 200 si la route est déployée.
+ * GET https://www.yieldapp.fr/api/stripe/webhook → 200 si la route est déployée.
  */
 export async function GET() {
   return NextResponse.json({

@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     // explicite yieldapp.fr pour que les boutons des emails marchent toujours.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? req.headers.get("origin")
-      ?? "https://yieldapp.fr";
+      ?? "https://www.yieldapp.fr";
     const dashboardUrl = `${appUrl}/dashboard`;
     // Le bouton CTA du mail trial-reminder pointe vers /billing (page dédiée
     // au tunnel d'achat — propose checkout direct ou portail si déjà subscribed).

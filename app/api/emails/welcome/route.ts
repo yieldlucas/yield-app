@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     // un preview Vercel ou pire localhost en email.
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? req.headers.get("origin")
-      ?? "https://yieldapp.fr";
+      ?? "https://www.yieldapp.fr";
     const dashboardUrl = `${appUrl}/dashboard`;
 
     const sent = await sendWelcomeEmail(email, { firstName, dashboardUrl });

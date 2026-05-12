@@ -78,9 +78,9 @@ export default function WelcomeEmail({ firstName, dashboardUrl }: WelcomeEmailPr
             </Text>
             <Text style={legal}>
               Yield · Par des chefs, pour des chefs · {" "}
-              <Link href="https://yieldapp.fr/terms" style={legalLink}>CGU</Link>
+              <Link href="https://www.yieldapp.fr/terms" style={legalLink}>CGU</Link>
               {" · "}
-              <Link href="https://yieldapp.fr/privacy" style={legalLink}>Confidentialité</Link>
+              <Link href="https://www.yieldapp.fr/privacy" style={legalLink}>Confidentialité</Link>
             </Text>
           </Section>
         </Container>
