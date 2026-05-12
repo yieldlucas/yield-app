@@ -35,6 +35,37 @@ const SCENE_LABELS: Record<Scene, string> = {
   recipes: "Marges en temps réel",
 };
 
+// Caption complète affichée à gauche de l'iPhone, synchronisée avec la scène
+// affichée. C'est ce qui rend le showcase auto-explicatif sans devoir lire le
+// reste de la page.
+const SCENE_CAPTIONS: Record<Scene, { step: string; title: string; body: string }> = {
+  dashboard: {
+    step: "01",
+    title: "Votre cockpit, au réveil.",
+    body: "En un coup d'œil, vous voyez vos marges du mois, vos alertes en cours et la santé de votre carte. Tout est calme — ou ça clignote.",
+  },
+  tap: {
+    step: "02",
+    title: "Un appui. Pas de tableur.",
+    body: "Vous touchez « Scanner ». Pas de logiciel à apprendre, pas de menu caché. L'app est conçue pour le coup de feu, pas pour le bureau.",
+  },
+  camera: {
+    step: "03",
+    title: "Photographiez votre BL.",
+    body: "Cadrez le bon de livraison comme une photo Instagram. À réception, en 5 secondes. Compatible Metro, Promocash, Transgourmet, PDF.",
+  },
+  processing: {
+    step: "04",
+    title: "L'IA lit en 30 secondes.",
+    body: "Claude Vision extrait chaque ligne matière, compare avec vos prix historiques et détecte les hausses. Précision > 97%.",
+  },
+  recipes: {
+    step: "05",
+    title: "Vos plats. En temps réel.",
+    body: "Dès qu'un fournisseur augmente, vos recettes glissent du vert au rouge. Vous ajustez la portion ou le prix avant le prochain service.",
+  },
+};
+
 export function PhoneShowcase() {
   const [scene, setScene] = useState<Scene>("dashboard");
   const [active, setActive] = useState(false);
@@ -68,56 +99,100 @@ export function PhoneShowcase() {
     return () => window.clearTimeout(t);
   }, [scene, active]);
 
+  const caption = SCENE_CAPTIONS[scene];
+  const idx = SCENES.indexOf(scene);
+
   return (
-    <div ref={containerRef} className="relative flex flex-col items-center">
-      {/* Glow décoratif derrière le phone — pure esthétique */}
-      <div
-        aria-hidden
-        className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none"
-      >
-        <div className="w-[340px] h-[340px] rounded-full bg-blue-500/15 blur-[80px] animate-pulse-slow" />
-      </div>
-
-      <motion.div
-        animate={{ y: [0, -8, 0] }}
-        transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
-        className="relative"
-      >
-        <PhoneFrame>
-          <AnimatePresence mode="wait">
-            {scene === "dashboard" && <SceneDashboard key="dashboard" />}
-            {scene === "tap" && <SceneTap key="tap" />}
-            {scene === "camera" && <SceneCamera key="camera" />}
-            {scene === "processing" && <SceneProcessing key="processing" />}
-            {scene === "recipes" && <SceneRecipes key="recipes" />}
-          </AnimatePresence>
-        </PhoneFrame>
-      </motion.div>
-
-      {/* Step indicator + label de la scène courante */}
-      <div className="mt-6 flex flex-col items-center gap-2">
+    <div
+      ref={containerRef}
+      className="relative grid md:grid-cols-[1fr_auto] gap-10 md:gap-16 items-center max-w-5xl mx-auto"
+    >
+      {/* ── Caption panel (gauche desktop, sous phone mobile) ── */}
+      <div className="order-2 md:order-1 text-center md:text-left max-w-md md:max-w-none mx-auto md:mx-0 md:pr-4">
         <AnimatePresence mode="wait">
-          <motion.p
+          <motion.div
             key={scene}
-            initial={{ opacity: 0, y: 4 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.25 }}
-            className="text-slate-500 text-xs font-semibold tracking-wide"
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
-            {SCENE_LABELS[scene]}
-          </motion.p>
+            <div className="inline-flex items-center gap-2 mb-4">
+              <span className="text-blue-600 font-mono text-xs font-bold tracking-widest">
+                {caption.step} / 05
+              </span>
+              <span className="text-blue-300">·</span>
+              <span className="text-blue-600 text-xs font-semibold uppercase tracking-wider">
+                {SCENE_LABELS[scene]}
+              </span>
+            </div>
+            <h3 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight mb-3 tracking-tight">
+              {caption.title}
+            </h3>
+            <p className="text-slate-500 text-sm md:text-base leading-relaxed">
+              {caption.body}
+            </p>
+          </motion.div>
         </AnimatePresence>
-        <div className="flex items-center gap-1.5">
+
+        {/* Progress bar globale */}
+        <div className="mt-8 flex items-center gap-3">
+          <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+            <motion.div
+              key={scene + "-bar"}
+              initial={{ width: "0%" }}
+              animate={active ? { width: "100%" } : { width: "0%" }}
+              transition={{ duration: SCENE_DURATIONS[scene] / 1000, ease: "linear" }}
+              className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"
+            />
+          </div>
+          <span className="text-slate-400 font-mono text-xs tabular-nums">
+            {String(idx + 1).padStart(2, "0")}/{String(SCENES.length).padStart(2, "0")}
+          </span>
+        </div>
+
+        {/* Step pills cliquables (saut direct à une scène) */}
+        <div className="mt-4 flex items-center gap-1.5 justify-center md:justify-start">
           {SCENES.map((s) => (
-            <div
+            <button
               key={s}
-              className={`h-1 rounded-full transition-all duration-500 ${
-                s === scene ? "w-8 bg-blue-500" : "w-1.5 bg-slate-300"
+              onClick={() => setScene(s)}
+              aria-label={`Voir l'étape ${SCENE_LABELS[s]}`}
+              className={`h-1.5 rounded-full transition-all duration-500 ${
+                s === scene
+                  ? "w-10 bg-blue-500"
+                  : "w-2 bg-slate-300 hover:bg-slate-400"
               }`}
             />
           ))}
         </div>
+      </div>
+
+      {/* ── Phone (droite desktop, en haut mobile) ── */}
+      <div className="order-1 md:order-2 relative flex justify-center">
+        {/* Glow décoratif derrière le phone */}
+        <div
+          aria-hidden
+          className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none"
+        >
+          <div className="w-[360px] h-[360px] rounded-full bg-blue-500/15 blur-[80px] animate-pulse-slow" />
+        </div>
+
+        <motion.div
+          animate={{ y: [0, -6, 0] }}
+          transition={{ repeat: Infinity, duration: 6, ease: "easeInOut" }}
+          className="relative"
+        >
+          <PhoneFrame>
+            <AnimatePresence mode="wait">
+              {scene === "dashboard" && <SceneDashboard key="dashboard" />}
+              {scene === "tap" && <SceneTap key="tap" />}
+              {scene === "camera" && <SceneCamera key="camera" />}
+              {scene === "processing" && <SceneProcessing key="processing" />}
+              {scene === "recipes" && <SceneRecipes key="recipes" />}
+            </AnimatePresence>
+          </PhoneFrame>
+        </motion.div>
       </div>
     </div>
   );
@@ -194,11 +269,13 @@ function PhoneFrame({ children }: { children: React.ReactNode }) {
 }
 
 // Transition partagée par toutes les scènes pour une cohérence visuelle.
+// Adoucie : fade prédominant + léger scale, plus de slide horizontal qui
+// faisait sortir le contenu du cadre pendant la transition.
 const sceneAnim = {
-  initial: { opacity: 0, x: 24, scale: 0.98 },
-  animate: { opacity: 1, x: 0, scale: 1 },
-  exit: { opacity: 0, x: -24, scale: 0.98 },
-  transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
+  initial: { opacity: 0, scale: 0.96 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 0.98 },
+  transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] as const },
 };
 
 // ─── Scène 1 : Dashboard ─────────────────────────────────────────────────────

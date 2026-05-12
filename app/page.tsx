@@ -208,16 +208,17 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
             </div>
           ))}
         </motion.div>
+      </motion.div>
 
-        {/* Showcase iPhone animé — 5 scènes du parcours produit en boucle */}
-        <motion.div
-          initial={{ opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.9, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
-          className="mt-20"
-        >
-          <PhoneShowcase />
-        </motion.div>
+      {/* Showcase iPhone animé — sorti du max-w-4xl pour profiter de la
+          largeur 2-col (caption à gauche, phone à droite sur desktop). */}
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.9, duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        className="w-full mt-20"
+      >
+        <PhoneShowcase />
       </motion.div>
 
       <motion.div
