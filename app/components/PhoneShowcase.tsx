@@ -18,15 +18,18 @@ import {
 const SCENES = ["dashboard", "tap", "camera", "processing", "recipes"] as const;
 type Scene = typeof SCENES[number];
 
-// Durée de chaque scène (ms). Ralenti suite au feedback user "trop rapide".
-// Total boucle ≈ 28s — laisse le temps de lire la caption + observer l'anim
-// interne. L'user peut accélérer via les flèches prev/next.
+// Durée uniforme pour toutes les scènes — c'était inconsistant et donnait
+// une sensation de pacing erratique (caption courte qui passe vite, longue
+// qui s'éternise). 6 secondes = lecture confortable d'une caption de
+// 15-25 mots + observation de l'animation interne. L'user peut accélérer
+// via les flèches s'il veut.
+const SCENE_DURATION_MS = 6000;
 const SCENE_DURATIONS: Record<Scene, number> = {
-  dashboard: 5500,
-  tap: 3500,
-  camera: 5500,
-  processing: 6500,
-  recipes: 7000,
+  dashboard: SCENE_DURATION_MS,
+  tap: SCENE_DURATION_MS,
+  camera: SCENE_DURATION_MS,
+  processing: SCENE_DURATION_MS,
+  recipes: SCENE_DURATION_MS,
 };
 
 const SCENE_LABELS: Record<Scene, string> = {
@@ -112,7 +115,7 @@ export function PhoneShowcase() {
   return (
     <div
       ref={containerRef}
-      className="relative grid md:grid-cols-[1fr_auto] gap-10 md:gap-16 items-center max-w-5xl mx-auto"
+      className="relative grid md:grid-cols-[1fr_auto] gap-6 md:gap-16 items-center max-w-5xl mx-auto px-4 md:px-6"
     >
       {/* ── Caption panel (gauche desktop, sous phone mobile) ── */}
       <div className="order-2 md:order-1 text-center md:text-left max-w-md md:max-w-none mx-auto md:mx-0 md:pr-4">
@@ -158,14 +161,18 @@ export function PhoneShowcase() {
           </span>
         </div>
 
-        {/* Navigation : flèches prev/next + step pills cliquables */}
-        <div className="mt-5 flex items-center gap-3 justify-center md:justify-start">
+        {/* Navigation : flèches prev/next + step pills cliquables.
+            Touch targets ≥ 44px sur mobile (recommandation Apple HIG), 36px
+            sur desktop pour rester discret. Pills ont une zone tactile élargie
+            via padding invisible. */}
+        <div className="mt-5 flex items-center gap-3 sm:gap-4 justify-center md:justify-start">
           <button
             onClick={goPrev}
             aria-label="Étape précédente"
-            className="w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm transition-all flex items-center justify-center"
+            className="w-11 h-11 md:w-9 md:h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm active:scale-95 transition-all flex items-center justify-center"
           >
-            <ChevronLeft size={16} />
+            <ChevronLeft size={18} className="md:hidden" />
+            <ChevronLeft size={16} className="hidden md:block" />
           </button>
           <div className="flex items-center gap-1.5">
             {SCENES.map((s) => (
@@ -173,20 +180,26 @@ export function PhoneShowcase() {
                 key={s}
                 onClick={() => setScene(s)}
                 aria-label={`Voir l'étape ${SCENE_LABELS[s]}`}
-                className={`h-1.5 rounded-full transition-all duration-500 ${
+                className={`h-1.5 rounded-full transition-all duration-500 py-3 -my-3 ${
                   s === scene
                     ? "w-10 bg-blue-500"
                     : "w-2 bg-slate-300 hover:bg-slate-400"
                 }`}
+                style={{
+                  // bg-clip-content garde la barre fine visuellement même avec
+                  // le padding tactile qui élargit la zone de clic.
+                  backgroundClip: "content-box",
+                }}
               />
             ))}
           </div>
           <button
             onClick={goNext}
             aria-label="Étape suivante"
-            className="w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm transition-all flex items-center justify-center"
+            className="w-11 h-11 md:w-9 md:h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:text-blue-600 hover:border-blue-300 hover:shadow-sm active:scale-95 transition-all flex items-center justify-center"
           >
-            <ChevronRight size={16} />
+            <ChevronRight size={18} className="md:hidden" />
+            <ChevronRight size={16} className="hidden md:block" />
           </button>
         </div>
       </div>
@@ -240,10 +253,18 @@ export function PhoneShowcase() {
 }
 
 // ─── Châssis iPhone (CSS pure, pas d'image) ──────────────────────────────────
+// Taille intrinsèque 300×612, scaled à 82% sur mobile / 90% sur tablette via
+// transform pour rentrer sur tous les écrans (320px iPhone SE inclus) sans
+// recalculer toute la géométrie interne. Les marges négatives compensent le
+// "fantôme" de bounding box que CSS transform: scale() ne réduit pas.
 function PhoneFrame({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="relative mx-auto"
+      className={[
+        "relative mx-auto origin-top",
+        "scale-[0.82] sm:scale-90 md:scale-100",
+        "-mb-[110px] sm:-mb-[62px] md:mb-0",
+      ].join(" ")}
       style={{ width: 300, height: 612 }}
     >
       {/* Reflection sous le téléphone — donne du volume */}
