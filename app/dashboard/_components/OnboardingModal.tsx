@@ -7,7 +7,7 @@ import { Bell, Calculator, Camera, ChefHat, ChevronRight, Sparkles } from "lucid
 const STEPS = [
   { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
   { n: "02", Icon: Sparkles, title: "L'IA lit", desc: "Chaque ligne matière est extraite et comparée à vos historiques." },
-  { n: "03", Icon: Bell, title: "Alerte rendement", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
+  { n: "03", Icon: Bell, title: "Alerte marge", desc: "Dès qu'une hausse dépasse 3%, YIELD vous prévient." },
   { n: "04", Icon: Calculator, title: "Pilotez vos marges", desc: "Composez vos plats dans la calculatrice et obtenez un prix de vente conseillé." },
 ];
 
@@ -146,7 +146,7 @@ export function OnboardingModal({
                   Bienvenue dans votre cockpit
                 </h2>
                 <p className="text-slate-500 text-sm text-center mb-7 leading-relaxed">
-                  Scannez vos BL et ajustez vos prix de vente : YIELD veille sur votre rendement.
+                  Scannez vos BL et ajustez vos prix de vente : YIELD veille sur votre marge.
                 </p>
                 <div className="space-y-4 mb-7">
                   {STEPS.map((s, i) => (

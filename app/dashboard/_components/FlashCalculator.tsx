@@ -696,9 +696,11 @@ function IngredientRow({
         )}
       </div>
 
-      {/* Quantité + unité + sous-total */}
+      {/* Quantité + unité + sous-total.
+          Mobile : qty(8)/unit(4) ligne 1 + sous-total pleine largeur ligne 2.
+          Desktop (sm+) : qty(5)/unit(3)/sous-total(4) sur une seule ligne. */}
       <div className="mt-2 grid grid-cols-12 gap-2 items-end">
-        <div className="col-span-5">
+        <div className="col-span-8 sm:col-span-5">
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
             Quantité
           </label>
@@ -711,10 +713,10 @@ function IngredientRow({
               onChange({ quantity: Number.isFinite(v) && v > 0 ? v : 0 });
             }}
             placeholder="0"
-            className="w-full rounded-lg border border-slate-200 px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
           />
         </div>
-        <div className="col-span-3">
+        <div className="col-span-4 sm:col-span-3">
           <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
             Unité
           </label>
@@ -722,23 +724,23 @@ function IngredientRow({
             <select
               value={ingredient.quantityUnit || ingredient.unit}
               onChange={(e) => onChange({ quantityUnit: e.target.value })}
-              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
+              className="w-full rounded-lg border border-slate-200 px-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400"
             >
               {unitChoices.map((u) => (
                 <option key={u} value={u}>{u}</option>
               ))}
             </select>
           ) : (
-            <div className="w-full rounded-lg bg-slate-50 border border-slate-200 px-2 py-1.5 text-sm text-slate-500 text-center">
+            <div className="w-full rounded-lg bg-slate-50 border border-slate-200 px-2 py-2 text-sm text-slate-500 text-center">
               {ingredient.unit || "—"}
             </div>
           )}
         </div>
-        <div className="col-span-4 text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+        <div className="col-span-12 sm:col-span-4 flex sm:block items-baseline justify-between sm:text-right pt-1 sm:pt-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 sm:mb-0">
             Sous-total
           </p>
-          <p className="text-sm font-bold text-slate-900 tabular-nums leading-tight">
+          <p className="text-base sm:text-sm font-bold text-slate-900 tabular-nums leading-tight">
             {fmtEuros(lineCost)}
           </p>
         </div>

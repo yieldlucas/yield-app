@@ -12,8 +12,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertCircle, ArrowLeft, ArrowRight, ChefHat, ChevronRight,
-  Search, Sparkles, TrendingDown, TrendingUp,
+  AlertCircle, ArrowLeft, ChefHat, ChevronRight,
+  Salad, Search, Sparkles, TrendingDown, TrendingUp,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import {
@@ -21,6 +21,7 @@ import {
   type RecipeListRow,
   type RecipeHealth,
 } from "../_lib/recipes-data";
+import { FlashCalculator } from "../_components/FlashCalculator";
 
 type Filter = "all" | "critical" | "warning" | "ok";
 
@@ -30,6 +31,9 @@ export default function RecipesPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  // Drawer FlashCalculator monté localement pour pouvoir l'ouvrir depuis
+  // l'empty state sans rebondir vers le dashboard home.
+  const [calcOpen, setCalcOpen] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -107,7 +111,7 @@ export default function RecipesPage() {
         {loading ? (
           <SkeletonList />
         ) : recipes.length === 0 ? (
-          <EmptyState />
+          <EmptyState onCreate={() => setCalcOpen(true)} />
         ) : visible.length === 0 ? (
           <p className="text-center text-sm text-slate-400 py-12">
             Aucune recette ne correspond à ce filtre.
@@ -129,6 +133,11 @@ export default function RecipesPage() {
           </AnimatePresence>
         )}
       </div>
+
+      {/* FlashCalculator monté localement — permet l'empty state de proposer
+          "Créer ma première recette" en 1 clic, sans rebondir vers /dashboard.
+          La save redirige vers /dashboard/recipes/[nouvel-id] (logique interne). */}
+      <FlashCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
     </main>
   );
 }
@@ -295,24 +304,35 @@ function SkeletonList() {
     </ul>
   );
 }
-function EmptyState() {
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="card rounded-3xl p-8 text-center border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-blue-50/50">
-      <div className="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center mx-auto mb-4 shadow-sm">
-        <Sparkles size={26} className="text-white" />
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="card rounded-3xl p-8 text-center border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50/40"
+    >
+      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto mb-5 shadow-md">
+        <Sparkles size={28} className="text-white" />
       </div>
-      <h2 className="text-slate-900 font-bold text-base mb-1">Aucune recette enregistrée</h2>
-      <p className="text-slate-500 text-sm mb-5 leading-relaxed">
-        Composez un plat dans la calculatrice et cliquez sur <em>Enregistrer comme recette</em>.
-        Yield suivra la rentabilité de chaque plat à chaque scan de facture.
+      <h2 className="text-slate-900 font-bold text-lg mb-2">Composez votre première recette</h2>
+      <p className="text-slate-500 text-sm mb-6 leading-relaxed max-w-sm mx-auto">
+        Ajoutez vos ingrédients dans la calculatrice. Yield mettra à jour la marge
+        et le food cost à chaque nouveau scan de facture, automatiquement.
       </p>
-      <Link
-        href="/dashboard"
-        className="btn-primary inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+      <button
+        onClick={onCreate}
+        className="btn-primary inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold shadow-blue-lg hover:-translate-y-0.5 transition-transform"
       >
-        Aller au dashboard <ArrowRight size={14} />
-      </Link>
-    </div>
+        <Salad size={15} />
+        Créer ma première recette
+        <ChevronRight size={14} className="-mr-1" />
+      </button>
+      <p className="text-[11px] text-slate-400 mt-4">
+        Astuce : depuis une facture, vous pouvez aussi cliquer{" "}
+        <em className="text-slate-600">Créer une recette depuis cette facture</em>{" "}
+        pour démarrer plus vite.
+      </p>
+    </motion.div>
   );
 }
 

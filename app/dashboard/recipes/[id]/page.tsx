@@ -162,7 +162,10 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
       }
       await reload();
       setSavedFlash(true);
-      setTimeout(() => setSavedFlash(false), 1800);
+      // 3s pour que l'user ait le temps de voir la confirmation et la
+      // marge mise à jour dans l'écran (1.8s était trop court — l'œil
+      // n'a pas le temps de capter le changement).
+      setTimeout(() => setSavedFlash(false), 3000);
     } finally {
       setSavingDrafts(false);
     }
@@ -332,7 +335,16 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
               </span>
             </p>
           ) : (
-            <p className="text-sm text-slate-400">Aucun prix défini.</p>
+            // Empty state actionnable : un clic suffit pour ouvrir l'édition,
+            // au lieu d'afficher un texte gris non-cliquable qui force à
+            // chercher le bouton "Modifier" en haut.
+            <button
+              onClick={() => { setEditPrice(true); setDraftPrice(""); }}
+              className="w-full text-left text-sm text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 rounded-lg px-3 py-2.5 flex items-center gap-2 transition-colors"
+            >
+              <Pencil size={13} />
+              Définir le prix de vente cible
+            </button>
           )}
         </div>
 
@@ -410,7 +422,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
                 {savingDrafts ? (
                   <>
                     <div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Sauvegarde
+                    Sauvegarde…
                   </>
                 ) : (
                   <><Save size={12} /> Appliquer</>

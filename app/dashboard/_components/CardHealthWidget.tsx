@@ -56,7 +56,7 @@ export function CardHealthWidget() {
               {stats.critical > 0 && <strong className="text-rose-700">{stats.critical} critique{stats.critical > 1 ? "s" : ""}</strong>}
               {stats.critical > 0 && stats.warning > 0 && " · "}
               {stats.warning > 0 && <strong className="text-amber-700">{stats.warning} à surveiller</strong>}
-              {attention === 0 && "Marges au-dessus de 75% — bon rendement."}
+              {attention === 0 && "Marges au-dessus de 75% — food cost maîtrisé."}
             </p>
           </div>
           <ChevronRight size={16} className="text-slate-400 flex-shrink-0" />

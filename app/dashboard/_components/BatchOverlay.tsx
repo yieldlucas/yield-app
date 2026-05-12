@@ -88,7 +88,11 @@ export function BatchOverlay({
               </div>
             </div>
 
-            <div className="space-y-2 max-h-64 overflow-y-auto mb-5 pr-1">
+            {/* Hauteur max responsive : 50vh sur mobile (où l'overlay prend
+                tout l'écran) pour qu'on voie 6-7 items à la fois sur batch
+                large, 256px (max-h-64) limite dure pour pas dépasser une
+                modale desktop confortable. */}
+            <div className="space-y-2 max-h-[min(50vh,256px)] overflow-y-auto mb-5 pr-1">
               {items.map((item) => (
                 <div key={item.id} className="flex items-center gap-3 text-sm">
                   <div

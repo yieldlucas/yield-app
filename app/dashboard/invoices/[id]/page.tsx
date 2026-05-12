@@ -6,7 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check, Pencil,
-  ChevronDown, RotateCcw, Save,
+  ChevronDown, RotateCcw, Salad, Save,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
@@ -285,12 +285,32 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   }
   if (error || !invoice) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6" style={{ background: "#F7F9FF" }}>
-        <div className="max-w-md w-full bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center">
-          <p className="text-rose-600 font-semibold mb-2">{error ?? "Facture introuvable"}</p>
-          <Link href="/dashboard" className="text-blue-600 text-sm font-medium">← Retour au dashboard</Link>
+      <main className="min-h-screen flex items-center justify-center p-6" style={{ background: "#F7F9FF" }}>
+        <div className="max-w-md w-full bg-white rounded-3xl p-8 shadow-sm border border-slate-100 text-center">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mb-5">
+            <FileText size={26} className="text-rose-500" />
+          </div>
+          <h1 className="text-slate-900 font-bold text-lg mb-2">Facture introuvable</h1>
+          <p className="text-slate-500 text-sm leading-relaxed mb-6">
+            {error
+              ?? "Cette facture a peut-être été supprimée, ou le lien que vous suivez n'est plus valide."}
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center">
+            <Link
+              href="/dashboard"
+              className="btn-primary inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold"
+            >
+              <ArrowLeft size={14} /> Retour au dashboard
+            </Link>
+            <a
+              href="mailto:lucasyieldapp@gmail.com?subject=Probl%C3%A8me%20avec%20une%20facture"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Contacter Lucas
+            </a>
+          </div>
         </div>
-      </div>
+      </main>
     );
   }
 
@@ -313,6 +333,17 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               {invoice.invoice_date ? new Date(invoice.invoice_date).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "Date inconnue"}
             </p>
           </div>
+
+          {/* Lien rapide vers Mes Recettes — évite au chef de repasser par
+              le dashboard pour piloter ses marges. */}
+          <Link
+            href="/dashboard/recipes"
+            className="hidden sm:inline-flex w-9 h-9 items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-50 transition-colors"
+            aria-label="Mes recettes"
+            title="Mes recettes"
+          >
+            <Salad size={16} />
+          </Link>
 
           {/* Action menu */}
           <div className="relative">

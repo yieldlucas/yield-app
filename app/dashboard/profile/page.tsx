@@ -288,7 +288,12 @@ export default function ProfilePage() {
                   <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">YIELD Pro</span>
                 </div>
                 <p className="text-2xl font-bold mb-1">14 jours offerts</p>
-                <p className="text-blue-100 text-sm mb-4">Scans illimités, alertes rendement, conciergerie chef. Sans engagement.</p>
+                <p className="text-blue-100 text-sm mb-1">
+                  200 scans / mois, alertes prix temps réel, conciergerie chef.
+                </p>
+                <p className="text-blue-200 text-xs mb-4">
+                  Puis <strong className="text-white">19,99 € HT/mois</strong> · Sans engagement · Résiliable en 1 clic
+                </p>
                 <button
                   onClick={startCheckout}
                   disabled={checkoutLoading}
@@ -333,7 +338,10 @@ export default function ProfilePage() {
               <div className="flex-1 min-w-0">
                 <p className="text-slate-900 font-semibold text-sm mb-1">Supprimer mon compte</p>
                 <p className="text-slate-500 text-xs leading-relaxed">
-                  Toutes vos données — bons de livraison, alertes, historique de prix — seront supprimées de manière irréversible. Cette action est définitive.
+                  Suppression définitive et immédiate de l&apos;ensemble de vos données :
+                  bons de livraison, recettes, historique de prix, alertes. Conforme RGPD —
+                  aucune sauvegarde n&apos;est conservée après la suppression. Préférez l&apos;export CSV
+                  avant si vous voulez en garder une trace.
                 </p>
               </div>
             </div>

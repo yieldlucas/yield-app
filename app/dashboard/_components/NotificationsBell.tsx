@@ -75,7 +75,7 @@ export function NotificationsBell({
             >
               <div className="sticky top-0 bg-white/95 backdrop-blur-md px-5 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-3xl sm:rounded-t-2xl">
                 <div className="flex items-center gap-2">
-                  <p className="text-slate-900 font-bold text-sm">Alertes Rendement</p>
+                  <p className="text-slate-900 font-bold text-sm">Alertes prix</p>
                   {hasAlerts && (
                     <span className="text-xs label-blue px-2 py-0.5 rounded-full font-semibold">
                       {count}
@@ -121,6 +121,9 @@ export function NotificationsBell({
                             </div>
                             <p className="text-slate-400 text-xs mt-0.5 truncate">
                               {a.supplier_name ?? "Fournisseur inconnu"}
+                              {disabled && (
+                                <span className="ml-1 italic text-slate-300">· facture supprimée</span>
+                              )}
                             </p>
                           </div>
                           {!disabled && (
