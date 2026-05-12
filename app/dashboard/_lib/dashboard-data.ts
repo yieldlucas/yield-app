@@ -143,7 +143,7 @@ export async function fetchAlerts(): Promise<Alert[]> {
   const { data, error } = await supabase
     .from("margin_alerts")
     .select(
-      "id, price_change_pct, old_price, new_price, affected_recipes, is_read, created_at, invoice_id, product:products(name), invoice:invoices(supplier:suppliers(name))",
+      "id, product_id, price_change_pct, old_price, new_price, affected_recipes, is_read, created_at, invoice_id, product:products(name, is_seasonal), invoice:invoices(supplier:suppliers(name))",
     )
     .eq("is_read", false)
     .order("created_at", { ascending: false })
@@ -151,6 +151,7 @@ export async function fetchAlerts(): Promise<Alert[]> {
   if (error || !data) return [];
   type Row = {
     id: string;
+    product_id: string | null;
     price_change_pct: number;
     old_price: number;
     new_price: number;
@@ -158,11 +159,12 @@ export async function fetchAlerts(): Promise<Alert[]> {
     is_read: boolean;
     created_at: string;
     invoice_id: string | null;
-    product: { name: string } | null;
+    product: { name: string; is_seasonal: boolean | null } | null;
     invoice: { supplier: { name: string } | null } | null;
   };
   return (data as unknown as Row[]).map((r) => ({
     id: r.id,
+    product_id: r.product_id,
     product_name: r.product?.name ?? "Produit inconnu",
     price_change_pct: Number(r.price_change_pct),
     old_price: Number(r.old_price),
@@ -172,6 +174,7 @@ export async function fetchAlerts(): Promise<Alert[]> {
     created_at: r.created_at,
     invoice_id: r.invoice_id,
     supplier_name: r.invoice?.supplier?.name ?? null,
+    product_is_seasonal: r.product?.is_seasonal === true,
   }));
 }
 
@@ -179,6 +182,33 @@ export async function fetchAlerts(): Promise<Alert[]> {
 export async function markAlertRead(id: string): Promise<boolean> {
   const { error } = await supabase.from("margin_alerts").update({ is_read: true }).eq("id", id);
   return !error;
+}
+
+/** Bascule le flag is_seasonal d'un produit (UPDATE direct via RLS owner_products).
+ *  Quand true, les alertes sur ce produit seront masquées par défaut dans la cloche
+ *  — utile pour ignorer la saisonnalité des tomates, asperges, etc. */
+export async function toggleProductSeasonal(
+  productId: string,
+  seasonal: boolean,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("products")
+    .update({ is_seasonal: seasonal })
+    .eq("id", productId);
+  return !error;
+}
+
+/** Compte les factures (status='processed') scannées dans les N derniers jours.
+ *  Sert au nudge "vos prix datent" sur le dashboard quand la fréquence baisse. */
+export async function fetchRecentScansCount(daysWindow = 7): Promise<number> {
+  const since = new Date(Date.now() - daysWindow * 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await supabase
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "processed")
+    .gte("created_at", since);
+  if (error) return 0;
+  return count ?? 0;
 }
 
 /** Marque plusieurs alertes lues d'un coup. */

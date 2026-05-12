@@ -297,6 +297,41 @@ export async function deleteRecipe(id: string): Promise<boolean> {
   return !error;
 }
 
+/**
+ * Pour la recette `recipeId`, compte le nombre d'AUTRES recettes qui utilisent
+ * le même product_id pour chaque ingrédient. Permet d'afficher
+ * "Utilisé dans X autres recettes" — quand le prix du beurre monte, le chef
+ * voit en un clin d'œil que son drift va se propager sur N plats.
+ *
+ * Retourne une map { product_id -> count of OTHER recipes }. Les ingrédients
+ * sans product_id (saisis à la main) ne sont pas comptés.
+ *
+ * 1 requête, agrégation côté client — suffisant tant que la BDD est petite.
+ */
+export async function fetchProductUsageInOtherRecipes(
+  recipeId: string,
+  productIds: string[],
+): Promise<Record<string, number>> {
+  const ids = productIds.filter((p): p is string => !!p);
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from("recipe_ingredients")
+    .select("recipe_id, product_id")
+    .in("product_id", ids)
+    .neq("recipe_id", recipeId);
+  if (error || !data) return {};
+  type Row = { recipe_id: string; product_id: string };
+  const map: Record<string, Set<string>> = {};
+  for (const r of data as unknown as Row[]) {
+    if (!r.product_id) continue;
+    if (!map[r.product_id]) map[r.product_id] = new Set();
+    map[r.product_id].add(r.recipe_id);
+  }
+  const result: Record<string, number> = {};
+  for (const pid of ids) result[pid] = map[pid]?.size ?? 0;
+  return result;
+}
+
 // ─── Helpers de calcul (miroir client de la fonction SQL) ────────────────────
 
 const TO_FACTOR_KG: Record<string, number> = { kg: 1, g: 0.001 };

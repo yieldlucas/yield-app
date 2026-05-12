@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check, Pencil,
-  ChevronDown, RotateCcw, Salad, Save,
+  AlertTriangle, ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check,
+  Pencil, ChevronDown, RotateCcw, Salad, Save,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
@@ -14,6 +14,19 @@ import { FlashCalculator, type CalculatorInitialIngredient } from "@/app/dashboa
 
 // Aligné avec dashboard/page.tsx — code couleur strict variation
 const VARIATION_ALERT_PCT = 7;
+
+/** Signal de défiance OCR : si le total de la ligne diverge de qty × prix
+ *  unitaire au-delà d'une tolérance, c'est probablement une lecture
+ *  approximative de Claude Vision (chiffre confondu, virgule mal placée…).
+ *  On marque visuellement la ligne pour que le chef vérifie. Tolérance :
+ *  max(2% du total, 0,05 €) — assez large pour absorber les arrondis BL
+ *  et les TVA arrondies, assez strict pour repérer les vraies erreurs. */
+function isLineSuspect(qty: number, unit: number, total: number): boolean {
+  if (qty <= 0 || unit <= 0 || total <= 0) return false;
+  const expected = qty * unit;
+  const tolerance = Math.max(total * 0.02, 0.05);
+  return Math.abs(expected - total) > tolerance;
+}
 
 type ItemRow = {
   id: string;
@@ -443,9 +456,22 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                   ? ((it.draft_unit_price - it.previous_price) / it.previous_price) * 100
                   : null;
                 const v = variationStyle(variationPct);
+                // Lecture suspecte : on calcule sur les valeurs ORIGINALES extraites
+                // par l'IA, pas les drafts. Si l'user a corrigé manuellement la ligne
+                // (isDirty), le flag disparaît — il a déjà fait le contrôle.
+                const suspect = !isDirty && isLineSuspect(
+                  Number(it.quantity),
+                  Number(it.unit_price_ht),
+                  Number(it.total_price_ht),
+                );
 
                 return (
-                  <div key={it.id} className={`px-4 py-3 ${isDirty ? "bg-amber-50/40" : ""}`}>
+                  <div
+                    key={it.id}
+                    className={`px-4 py-3 transition-colors ${
+                      isDirty ? "bg-amber-50/40" : suspect ? "bg-yellow-50/40 border-l-2 border-yellow-300" : ""
+                    }`}
+                  >
                     {/* Ligne 1 : libellé (cliquable pour éditer) */}
                     <div className="flex items-start gap-2 mb-1.5">
                       {isEditingLabel ? (
@@ -482,6 +508,20 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                         </button>
                       )}
                     </div>
+                    {/* Badge "À vérifier" — incohérence détectée entre qty×prix
+                        et total ligne. Affiche les valeurs attendues vs lues pour
+                        que le chef voie d'un coup d'œil quelle case corriger. */}
+                    {suspect && (
+                      <div className="mb-2 -mx-1 px-2 py-1.5 rounded-md bg-yellow-50 border border-yellow-200 flex items-start gap-1.5">
+                        <AlertTriangle size={12} className="text-yellow-600 flex-shrink-0 mt-0.5" />
+                        <p className="text-[11px] text-yellow-800 leading-tight">
+                          <strong>À vérifier.</strong>{" "}
+                          {Number(it.quantity).toFixed(2)} × {Number(it.unit_price_ht).toFixed(2)}{" "}
+                          ≠ {Number(it.total_price_ht).toFixed(2)} €.{" "}
+                          <span className="text-yellow-700">Cliquez sur une valeur pour corriger.</span>
+                        </p>
+                      </div>
+                    )}
 
                     {/* Ligne 2 : qty | prix unit | variation */}
                     <div className="flex items-center gap-3 text-sm">

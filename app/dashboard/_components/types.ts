@@ -10,6 +10,9 @@ export const VARIATION_ALERT_PCT = 7;
 
 export interface Alert {
   id: string;
+  /** ID du produit catalogue (necessaire pour le toggle saisonnier). NULL si
+   *  l'alerte est antérieure au backfill ou liée à un produit supprimé. */
+  product_id: string | null;
   product_name: string;
   price_change_pct: number;
   old_price: number;
@@ -24,6 +27,10 @@ export interface Alert {
   /** Nom du fournisseur de la facture liée. Affiché dans le drawer cloche
    *  pour donner du contexte au chef. */
   supplier_name: string | null;
+  /** Vrai si le chef a marqué ce produit comme saisonnier (variations
+   *  attendues, à ignorer). Les alertes correspondantes sont filtrées par
+   *  défaut dans la cloche, accessibles via l'onglet "Saisonniers". */
+  product_is_seasonal: boolean;
 }
 
 export interface RecentInvoice {

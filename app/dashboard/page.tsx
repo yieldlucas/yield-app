@@ -24,9 +24,10 @@ import { DashboardHeader } from "./_components/DashboardHeader";
 import { MonthlyStatsStrip } from "./_components/MonthlyStatsStrip";
 import { CardHealthWidget } from "./_components/CardHealthWidget";
 import { DashboardHero } from "./_components/DashboardHero";
+import { ScanReminderBanner } from "./_components/ScanReminderBanner";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
-import { fetchInvoiceLinesForCalc } from "./_lib/dashboard-data";
+import { fetchInvoiceLinesForCalc, fetchRecentScansCount } from "./_lib/dashboard-data";
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
 } from "./_components/SubscriptionBanners";
@@ -81,6 +82,12 @@ export default function DashboardPage() {
   const [recipesStats, setRecipesStats] = useState<{
     total: number; critical: number; warning: number;
   } | null>(null);
+  // Compte des scans des 7 derniers jours — alimente le ScanReminderBanner.
+  // Null = pas encore chargé (le banner ne s'affiche que sur chiffre connu).
+  const [recentScans, setRecentScans] = useState<number | null>(null);
+  // Permet de masquer le banner après dismiss (la persistance 3 jours est
+  // gérée en localStorage côté ScanReminderBanner).
+  const [reminderDismissed, setReminderDismissed] = useState(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
   // Signal partagé avec processBatch : flippé à true au démontage pour
@@ -211,6 +218,7 @@ export default function DashboardPage() {
   const reloadAlerts = async () => setAlerts(await fetchAlerts());
   const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
   const reloadRecipesStats = async () => setRecipesStats(await fetchRecipesHealth());
+  const reloadRecentScans = async () => setRecentScans(await fetchRecentScansCount(7));
 
   // Ouvre la calculatrice pré-remplie avec les lignes d'une facture donnée.
   // Trigger raccourci "Créer une recette depuis cette facture".
@@ -297,6 +305,7 @@ export default function DashboardPage() {
         void reloadAlerts();
         void reloadMonthlyStats();
         void reloadRecipesStats();
+        void reloadRecentScans();
       },
     }, batchSignalRef.current);
 
@@ -335,7 +344,7 @@ export default function DashboardPage() {
       setUserId(session.user.id);
       setLoading(false);
       void reloadUsage(); void reloadInvoices(); void reloadAlerts();
-      void reloadMonthlyStats(); void reloadRecipesStats();
+      void reloadMonthlyStats(); void reloadRecipesStats(); void reloadRecentScans();
 
       // Pré-remplit la modal onboarding si le nom est déjà connu (réouverture
       // manuelle après reset de yield_onboarding_seen, ou bug de navigation).
@@ -459,6 +468,16 @@ export default function DashboardPage() {
           onCreateRecipe={() => { setCalcSeed(null); setCalcOpen(true); }}
           recipesCount={recipesStats?.total ?? 0}
         />
+
+        {/* Rappel scan — nudge doux si le chef a oublié de scanner cette
+            semaine. Le composant gère lui-même le dismiss localStorage (3j). */}
+        {!reminderDismissed && recentScans != null && (
+          <ScanReminderBanner
+            recentScans={recentScans}
+            totalInvoices={invoices.length}
+            onDismiss={() => setReminderDismissed(true)}
+          />
+        )}
 
         {/* Empty state additionnel : si aucune facture, on offre l'option
             "Importer un fichier" en lien discret. L'option scan est déjà

@@ -20,6 +20,7 @@ import {
 import { supabase } from "@/lib/supabase-browser";
 import {
   fetchRecipeDetail,
+  fetchProductUsageInOtherRecipes,
   updateRecipeSellingPrice,
   updateIngredientQuantity,
   updateIngredientManualPrice,
@@ -59,6 +60,12 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
   const [confirmRebaseline, setConfirmRebaseline] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Map product_id → nombre d'AUTRES recettes utilisant ce produit.
+  // Permet de montrer au chef l'impact transverse d'un ingrédient
+  // (ex: "le beurre est dans 7 autres plats"), donc l'urgence d'agir
+  // quand son prix dérape.
+  const [crossUsage, setCrossUsage] = useState<Record<string, number>>({});
+
   const reload = async () => {
     const r = await fetchRecipeDetail(id);
     setRecipe(r);
@@ -67,6 +74,18 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
       setDrafts({}); // reset le brouillon après reload
       setDraftPrice(r.selling_price != null ? String(r.selling_price) : "");
       setDraftVat(r.vat_rate ?? 10);
+      // Fetch en parallèle : la liste des recettes utilisant les mêmes
+      // ingrédients. Si erreur, on bail silencieux — l'info est nice-to-have,
+      // pas critique.
+      const productIds = r.ingredients
+        .map((i) => i.product_id)
+        .filter((p): p is string => !!p);
+      if (productIds.length > 0) {
+        const usage = await fetchProductUsageInOtherRecipes(r.id, productIds);
+        setCrossUsage(usage);
+      } else {
+        setCrossUsage({});
+      }
     } else {
       setError("Recette introuvable ou non accessible.");
     }
@@ -376,6 +395,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
                   setManualEditId(ing.id);
                   setManualValue(ing.manual_price_ht?.toString() ?? "");
                 }}
+                otherRecipesCount={ing.product_id ? (crossUsage[ing.product_id] ?? 0) : 0}
               />
             ))}
           </ul>
@@ -530,7 +550,7 @@ function DriftPanel({
 // ─── Ligne ingrédient ────────────────────────────────────
 function IngredientLine({
   ing, draftQty, isDrafted, subtotal,
-  onChangeQty, onResetQty, onEditManual,
+  onChangeQty, onResetQty, onEditManual, otherRecipesCount,
 }: {
   ing: RecipeIngredientRow;
   draftQty: number;
@@ -539,6 +559,9 @@ function IngredientLine({
   onChangeQty: (v: number) => void;
   onResetQty: () => void;
   onEditManual: () => void;
+  /** Nombre d'AUTRES recettes utilisant le même product_id. Affiche un badge
+   *  "Utilisé dans X recettes" pour montrer l'impact transverse du drift. */
+  otherRecipesCount: number;
 }) {
   const drift = ing.price_drift_pct;
   const isUp = drift != null && drift > 0;
@@ -554,7 +577,20 @@ function IngredientLine({
     }`}>
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-slate-900 text-sm truncate">{ing.label}</p>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="font-semibold text-slate-900 text-sm truncate">{ing.label}</p>
+            {otherRecipesCount > 0 && (
+              <span
+                className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1"
+                title="Cet ingrédient est utilisé dans d'autres recettes — toute variation de prix se propage."
+              >
+                <ChefHat size={9} />
+                {otherRecipesCount === 1
+                  ? "1 autre recette"
+                  : `${otherRecipesCount} autres recettes`}
+              </span>
+            )}
+          </div>
           <p className="text-[11px] text-slate-400 tabular-nums">
             {ing.current_price_ht != null
               ? <>Prix HT : <strong className="text-slate-700">{ing.current_price_ht.toFixed(2)} €</strong>/{ing.product_unit || ing.unit}</>
