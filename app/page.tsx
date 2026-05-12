@@ -3,32 +3,14 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
-  Camera, Zap, Bell, ShieldCheck, Clock, TrendingDown,
-  TrendingUp, Euro, ChefHat, Lock, Server, ArrowRight, ArrowLeft,
+  Camera, Zap, Bell, ShieldCheck, TrendingDown,
+  ChefHat, Lock, Server, ArrowRight, ArrowLeft,
   CheckCircle2, Menu, X, Scale, Timer, MessageCircle, KeyRound,
-  Salad, Sliders, LineChart,
+  Salad, Sliders,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PhoneShowcase } from "./components/PhoneShowcase";
 import { supabase } from "@/lib/supabase-browser";
-
-// ─── Animated counter ────────────────────────────────────
-function useCounter(target: number, duration = 1800, active = false) {
-  const [count, setCount] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    let start: number;
-    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
-    const step = (ts: number) => {
-      if (!start) start = ts;
-      const p = easeOut(Math.min((ts - start) / duration, 1));
-      setCount(Math.round(p * target));
-      if (p < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }, [target, duration, active]);
-  return count;
-}
 
 // ─── Shader background ───────────────────────────────────
 function ShaderBackground() {
@@ -152,7 +134,7 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
           className="inline-flex items-center gap-2 label-blue rounded-full px-4 py-2 text-sm font-medium mb-8"
         >
           <Timer size={14} className="text-blue-500" />
-          Précision chef. Rendement garanti.
+          La marge sous contrôle. En 30 secondes.
         </motion.div>
 
         <motion.h1
@@ -174,7 +156,7 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
         >
           À chaque livraison, vos fournisseurs ajustent leurs tarifs.{" "}
           <span className="text-slate-800 font-semibold">YIELD lit vos bons de livraison en 30 secondes</span>{" "}
-          et vous alerte avant que votre rendement ne s&apos;effondre.
+          et vous alerte avant que votre food cost ne s&apos;envole.
         </motion.p>
 
         <motion.div
@@ -239,66 +221,6 @@ function HeroSection({ onCTA }: { onCTA: () => void }) {
   );
 }
 
-// ─── Stats ────────────────────────────────────────────────
-function StatsSection() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [active, setActive] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const io = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) setActive(true); },
-      { threshold: 0.3 }
-    );
-    io.observe(el);
-    return () => io.disconnect();
-  }, []);
-
-  const pct = useCounter(6, 1600, active);
-  const hours = useCounter(4, 1400, active);
-  const k = useCounter(12, 2000, active);
-
-  const stats = [
-    { value: `${pct}%`, label: "de rendement qui s'évapore chaque année — hausses fournisseurs passées sous le radar", Icon: TrendingDown, color: "text-red-500" },
-    { value: `${hours}h`, label: "par semaine à recalculer les food costs à la main, entre deux services", Icon: Clock, color: "text-amber-500" },
-    { value: `${k}k€`, label: "de marge perdue par an sur un restaurant à 500 k€ de CA", Icon: Euro, color: "text-blue-600" },
-  ];
-
-  return (
-    <section ref={ref} className="py-24 px-5">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-14"
-        >
-          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Le constat net</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900">L&apos;inflation silencieuse qui ronge votre rendement</h2>
-        </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-6">
-          {stats.map(({ value, label, Icon, color }, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 32 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.12, duration: 0.6 }}
-              className="card rounded-2xl p-8 card-hover"
-            >
-              <Icon className={`${color} mb-5`} size={28} />
-              <div className={`text-5xl font-bold ${color} mb-3 font-mono tabular-nums`}>{value}</div>
-              <p className="text-slate-500 text-sm leading-relaxed">{label}</p>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 // ─── How it works ─────────────────────────────────────────
 function HowItWorksSection() {
   const steps = [
@@ -320,8 +242,8 @@ function HowItWorksSection() {
     },
     {
       number: "03", Icon: Bell,
-      title: "Alerte rendement si la variation dépasse 3%",
-      subtitle: "Votre rendement protégé en temps réel",
+      title: "Alerte marge si la variation dépasse 3%",
+      subtitle: "Votre food cost protégé en temps réel",
       description: "Dès qu'un prix matière dépasse le seuil, YIELD calcule l'impact net sur chaque fiche technique. Vous ajustez votre carte avant le prochain coup de feu.",
       detail: "Visualisez quelles fiches techniques sont impactées et de combien de points.",
       mockup: <AlertMockup />,
@@ -446,7 +368,7 @@ function AIMockup() {
         ))}
       </div>
       <div className="px-4 pb-4">
-        <div className="btn-primary w-full text-center text-xs py-2.5 rounded-xl">3 alertes rendement générées</div>
+        <div className="btn-primary w-full text-center text-xs py-2.5 rounded-xl">3 alertes marge générées</div>
       </div>
     </div>
   );
@@ -456,8 +378,8 @@ function AlertMockup() {
   return (
     <div className="w-72 space-y-3">
       {[
-        { product: "Filet de saumon", change: "+14.2%", recipes: "Tartare, Pavé grillé", impact: "−3.2 pts rendement" },
-        { product: "Huile d'olive AOP", change: "+5.1%", recipes: "Salade, Pasta", impact: "−0.9 pts rendement" },
+        { product: "Filet de saumon", change: "+14.2%", recipes: "Tartare, Pavé grillé", impact: "−3.2 pts de marge" },
+        { product: "Huile d'olive AOP", change: "+5.1%", recipes: "Salade, Pasta", impact: "−0.9 pts de marge" },
       ].map((alert, i) => (
         <motion.div key={i} initial={{ opacity: 0, y: 10, scale: 0.97 }} whileInView={{ opacity: 1, y: 0, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.15 }} className="card rounded-2xl p-4 border-l-4 border-blue-500">
           <div className="flex justify-between items-start mb-1.5">
@@ -545,108 +467,6 @@ function RecipesMockup() {
   );
 }
 
-// ─── Recipes Section : pitch dédié du module Mes Recettes ─────────────────
-function RecipesSection() {
-  const features = [
-    {
-      Icon: Salad, title: "Lien dynamique",
-      desc: "Chaque ingrédient est lié au dernier prix scanné. Pas de ressaisie, pas de fichier Excel obsolète.",
-    },
-    {
-      Icon: LineChart, title: "Dérive en temps réel",
-      desc: "Yield surveille automatiquement vos plats et flag ceux dont la marge passe sous votre seuil.",
-    },
-    {
-      Icon: Sliders, title: "Simulateur de portion",
-      desc: "Testez 180g au lieu de 200g et voyez instantanément si la marge revient au vert sans toucher au prix client.",
-    },
-  ];
-
-  return (
-    <section id="recettes" className="py-32 px-5 bg-gradient-to-b from-white via-emerald-50/30 to-white">
-      <div className="max-w-6xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <p className="text-emerald-700 uppercase tracking-widest text-xs font-semibold mb-3 inline-flex items-center gap-1.5">
-            <ChefHat size={12} /> Nouveau · Mes Recettes
-          </p>
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4 leading-tight">
-            Vos plats, <span className="gradient-text">connectés à vos factures</span>.
-          </h2>
-          <p className="text-slate-500 max-w-2xl mx-auto leading-relaxed">
-            Composez vos fiches techniques une fois. Yield met à jour leur coût matière à chaque scan
-            et vous prévient — discrètement, dans l&apos;app, sans notification — quand un plat glisse
-            sous votre seuil de rendement.
-          </p>
-        </motion.div>
-
-        <div className="grid md:grid-cols-2 gap-12 items-center mb-16">
-          <motion.div
-            initial={{ opacity: 0, x: -24 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="flex justify-center"
-          >
-            <RecipesMockup />
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, x: 24 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.6 }}
-            className="space-y-5"
-          >
-            {features.map(({ Icon, title, desc }, i) => (
-              <div key={i} className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center flex-shrink-0">
-                  <Icon size={18} className="text-emerald-700" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-slate-900 font-bold text-base mb-1">{title}</h3>
-                  <p className="text-slate-500 text-sm leading-relaxed">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-
-        {/* Promesse zéro-bruit en bas — important pour différencier des outils
-            qui spamment de notifications */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="card rounded-2xl p-6 md:p-8 max-w-3xl mx-auto border border-slate-100 bg-white"
-        >
-          <div className="flex items-start gap-4">
-            <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center flex-shrink-0">
-              <Bell size={20} className="text-amber-600" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
-                Promesse zéro bruit
-              </p>
-              <h3 className="text-slate-900 font-bold text-base mb-2">
-                Pas de notification intempestive. L&apos;info reste là où vous la cherchez.
-              </h3>
-              <p className="text-slate-500 text-sm leading-relaxed">
-                Yield ne vous spamme jamais. Le widget <em>Santé de votre Carte</em> sur le dashboard
-                vous indique simplement combien de plats nécessitent votre attention. Vous décidez quand
-                creuser, sans interrompre votre service.
-              </p>
-            </div>
-          </div>
-        </motion.div>
-      </div>
-    </section>
-  );
-}
-
 // ─── ROI Section ──────────────────────────────────────────
 function ROISection() {
   const scans = [
@@ -729,36 +549,30 @@ function ROISection() {
           ))}
         </div>
 
+        {/* Card de garantie — claim simple et honnête, mise en avant.
+            On a retiré "ROI 60×" et "1 247 €/mois économies" qui n'étaient
+            pas étayés par des données réelles (lancement, 0 client). */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.3 }}
-          className="card rounded-2xl p-8 border border-blue-100"
+          className="rounded-3xl p-10 text-center relative overflow-hidden"
+          style={{ background: "linear-gradient(145deg, #EFF6FF 0%, #DBEAFE 100%)" }}
         >
-          <div className="grid md:grid-cols-3 gap-8 items-center">
-            <div className="text-center">
-              <p className="text-slate-400 text-sm mb-2">Abonnement YIELD</p>
-              <p className="text-3xl font-bold text-slate-900 font-mono">
-                19,99 €<span className="text-base font-normal text-slate-400"> HT/mois</span>
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="text-5xl font-bold gradient-text font-mono">60×</div>
-              <p className="text-slate-500 text-sm mt-1">ROI moyen constaté</p>
-            </div>
-            <div className="text-center">
-              <p className="text-slate-400 text-sm mb-2">Économies détectées</p>
-              <p className="text-3xl font-bold text-blue-600 font-mono">
-                1 247€<span className="text-base font-normal text-slate-400">/mois</span>
-              </p>
-            </div>
-          </div>
-          <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-            <p className="text-slate-600 text-sm">
-              <span className="font-semibold text-slate-900">Dès le premier scan,</span>{" "}
-              YIELD vous a rapporté plus qu&apos;il ne coûte.{" "}
-              <span className="text-blue-600 font-semibold">Rentabilité garantie ou remboursé.</span>
+          <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-blue-200/40 blur-2xl" />
+          <div className="relative">
+            <p className="text-blue-700 uppercase tracking-widest text-xs font-bold mb-3">Notre promesse</p>
+            <h3 className="text-3xl md:text-4xl font-bold text-slate-900 mb-3 leading-tight">
+              Rentabilité garantie<br className="md:hidden" />
+              {" "}ou <span className="gradient-text">remboursé.</span>
+            </h3>
+            <p className="text-slate-600 max-w-xl mx-auto leading-relaxed mb-2">
+              Si YIELD ne vous fait pas économiser plus que son coût dès le premier mois,
+              on vous rembourse intégralement. Aucune question, aucune justification.
+            </p>
+            <p className="text-slate-500 text-sm">
+              Abonnement <strong className="text-slate-900">19,99 € HT/mois</strong> · Sans engagement · Résiliable en 1 clic
             </p>
           </div>
         </motion.div>
@@ -801,16 +615,27 @@ function ROISection() {
 
 // ─── Benefits ─────────────────────────────────────────────
 function BenefitsSection() {
-  const benefits = [
-    { Icon: Clock, title: "2 min. Pas 2 heures.", description: "Fini les tableurs Excel et la ressaisie manuelle. Une photo du bon, et c'est fait. Votre équipe reste concentrée sur le coup de feu.", metric: "−95%", metricLabel: "temps de contrôle" },
-    { Icon: TrendingUp, title: "Récupérez vos points de rendement", description: "Nos utilisateurs récupèrent en moyenne 3 à 5 points de marge nette dès les 6 premières semaines en ajustant leur carte au bon moment.", metric: "+4 pts", metricLabel: "rendement net moyen" },
-    { Icon: ShieldCheck, title: "Votre P&L, sous contrôle", description: "Chaque bon de livraison est contrôlé. Chaque hausse matière est détectée. Votre fin de mois ne vous réserve plus de mauvaises surprises.", metric: "100%", metricLabel: "des BL contrôlés" },
-  ];
-
   return (
     <section id="benefices" className="py-24 px-5">
-      <div className="max-w-6xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="grid md:grid-cols-2 gap-6 mb-20">
+      <div className="max-w-5xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-12"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Le quotidien d&apos;un chef</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 leading-tight">
+            Hier sans YIELD.<br />
+            <span className="gradient-text">Aujourd&apos;hui avec.</span>
+          </h2>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="grid md:grid-cols-2 gap-6"
+        >
           <div className="card rounded-2xl p-8 border-l-4 border-red-300">
             <p className="text-red-500 text-xs font-semibold uppercase tracking-widest mb-5">Avant YIELD</p>
             <ul className="space-y-3">
@@ -833,7 +658,7 @@ function BenefitsSection() {
                 "Alerte le jour même de la livraison",
                 "Vous ajustez votre prix de vente immédiatement",
                 "Fiches techniques mises à jour automatiquement",
-                "Votre rendement reste sous contrôle 24h/24",
+                "Votre marge reste sous contrôle 24h/24",
               ].map((item, i) => (
                 <li key={i} className="flex items-center gap-2 text-slate-700 text-sm">
                   <CheckCircle2 size={14} className="text-blue-500 flex-shrink-0" /> {item}
@@ -842,22 +667,6 @@ function BenefitsSection() {
             </ul>
           </div>
         </motion.div>
-
-        <div className="grid md:grid-cols-3 gap-6">
-          {benefits.map(({ Icon, title, description, metric, metricLabel }, i) => (
-            <motion.div key={i} initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.12 }} className="card rounded-2xl p-7 card-hover flex flex-col">
-              <div className="w-11 h-11 glass-blue rounded-xl flex items-center justify-center mb-5">
-                <Icon size={20} className="text-blue-600" />
-              </div>
-              <div className="mb-3">
-                <span className="text-3xl font-bold gradient-text font-mono">{metric}</span>
-                <span className="text-slate-400 text-sm ml-2">{metricLabel}</span>
-              </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-3">{title}</h3>
-              <p className="text-slate-500 text-sm leading-relaxed flex-1">{description}</p>
-            </motion.div>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -899,38 +708,84 @@ function StorySection() {
   );
 }
 
-// ─── Security ─────────────────────────────────────────────
-function SecuritySection() {
+// ─── FAQ ──────────────────────────────────────────────────
+// 4 objections fréquentes des chefs avant d'essayer, avec réponses courtes
+// et honnêtes. Placée juste avant le CTA final pour lever les dernières
+// hésitations.
+function FAQSection() {
   const items = [
-    { Icon: Lock, title: "Chiffrement bout-en-bout", text: "Vos données et bons de livraison sont chiffrés AES-256 au repos et en transit. Personne d'autre que vous n'y accède." },
-    { Icon: Server, title: "Hébergé en Europe", text: "Infrastructure AWS eu-west-3 (Paris). Conformité RGPD native. Aucune donnée ne sort de l'Union Européenne." },
-    { Icon: ShieldCheck, title: "Sans mot de passe", text: "Accès par Magic Link uniquement. Pas de mot de passe à retenir, pas de risque de fuite de credentials." },
-    { Icon: CheckCircle2, title: "Vos données vous appartiennent", text: "Export complet à tout moment. Suppression totale sur demande sous 48h. Aucune revente, jamais." },
+    {
+      q: "Et si l'IA se trompe en lisant mon BL ?",
+      a: "Chaque ligne est éditable en 1 clic depuis la facture. L'IA atteint une précision élevée sur les BL imprimés et manuscrits, mais c'est vous qui gardez la main : si elle lit \"15,20\" au lieu de \"15,02\", vous corrigez et l'historique reste juste.",
+    },
+    {
+      q: "Combien de temps ça prend par jour ?",
+      a: "Une photo du BL à réception, soit 5 secondes. L'analyse tourne en arrière-plan, vous n'attendez pas. Rien à classer, rien à ressaisir. Si vous avez 3 livraisons par semaine, c'est 1 minute hebdo total.",
+    },
+    {
+      q: "Et si je veux résilier ?",
+      a: "Résiliation en 1 clic depuis le portail Stripe, à tout moment. Aucune relance, aucune justification. Vous exportez vos données quand vous voulez (CSV pour votre comptable, PDF pour vos archives). Aucune revente, jamais.",
+    },
+    {
+      q: "Mes BL contiennent des informations sensibles. Vous en faites quoi ?",
+      a: "Stockage chiffré (AES-256) sur serveurs en France. Aucun partage avec qui que ce soit, jamais. Suppression totale sur simple demande sous 48h. Compatible RGPD natif. Vos données sont entre vos mains — et seulement les vôtres.",
+    },
   ];
 
   return (
-    <section id="securite" className="py-24 px-5">
-      <div className="max-w-6xl mx-auto">
-        <motion.div initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="text-center mb-14">
-          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Sécurité</p>
-          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 mb-4">
-            Vos données sont entre de <span className="gradient-text">bonnes mains</span>
+    <section className="py-24 px-5">
+      <div className="max-w-3xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="text-center mb-12"
+        >
+          <p className="text-blue-600 uppercase tracking-widest text-xs font-semibold mb-3">Questions fréquentes</p>
+          <h2 className="text-3xl md:text-4xl font-bold text-slate-900 leading-tight">
+            Ce que les chefs nous{" "}
+            <span className="gradient-text">demandent.</span>
           </h2>
-          <p className="text-slate-500 max-w-lg mx-auto">Conçu avec la même exigence que nous avions pour nos restaurants — zéro compromis.</p>
         </motion.div>
-        <div className="grid md:grid-cols-2 gap-5">
-          {items.map(({ Icon, title, text }, i) => (
-            <motion.div key={i} initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.1 }} className="card rounded-2xl p-6 flex gap-4 card-hover">
-              <div className="w-10 h-10 glass-blue rounded-xl flex items-center justify-center flex-shrink-0">
-                <Icon size={18} className="text-blue-600" />
+
+        <div className="space-y-3">
+          {items.map((item, i) => (
+            <motion.details
+              key={i}
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.08 }}
+              className="group card rounded-2xl border border-slate-100 overflow-hidden"
+            >
+              <summary className="cursor-pointer list-none p-5 flex items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
+                <span className="text-slate-900 font-semibold text-sm md:text-base">{item.q}</span>
+                <span className="w-7 h-7 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 group-open:rotate-45 transition-transform duration-300">
+                  <span className="text-lg leading-none font-light">+</span>
+                </span>
+              </summary>
+              <div className="px-5 pb-5 -mt-1">
+                <p className="text-slate-500 text-sm leading-relaxed">{item.a}</p>
               </div>
-              <div>
-                <h3 className="text-slate-900 font-semibold mb-1.5">{title}</h3>
-                <p className="text-slate-500 text-sm leading-relaxed">{text}</p>
-              </div>
-            </motion.div>
+            </motion.details>
           ))}
         </div>
+
+        <motion.p
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.4 }}
+          className="text-center text-slate-400 text-sm mt-8"
+        >
+          Une autre question ?{" "}
+          <a
+            href="mailto:chef@yieldapp.fr"
+            className="text-blue-600 font-semibold hover:underline"
+          >
+            Écrivez à Lucas, fondateur
+          </a>
+        </motion.p>
       </div>
     </section>
   );
@@ -1449,20 +1304,50 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
 
 // ─── Final CTA banner ─────────────────────────────────────
 function FinalCTABanner({ onCTA }: { onCTA: () => void }) {
+  // Trust strip — anciennes infos de SecuritySection condensées en 4 items
+  // discrets sous le CTA principal. Rassure sans saouler.
+  const trustItems = [
+    { Icon: Lock, label: "Chiffrement AES-256" },
+    { Icon: Server, label: "Hébergé en France" },
+    { Icon: KeyRound, label: "Magic Link sans mot de passe" },
+    { Icon: ShieldCheck, label: "RGPD natif" },
+  ];
+
   return (
     <section className="py-24 px-5">
-      <motion.div initial={{ opacity: 0, y: 32 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="max-w-4xl mx-auto rounded-3xl p-12 text-center relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8 0%, #2563EB 40%, #4F46E5 100%)" }}>
+      <motion.div
+        initial={{ opacity: 0, y: 32 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        className="max-w-4xl mx-auto rounded-3xl p-10 md:p-12 text-center relative overflow-hidden"
+        style={{ background: "linear-gradient(145deg, #1D4ED8 0%, #2563EB 40%, #4F46E5 100%)" }}
+      >
         <div className="absolute inset-0 rounded-3xl" style={{ background: "radial-gradient(ellipse at 30% 30%, rgba(255,255,255,0.15) 0%, transparent 60%)" }} />
         <div className="relative">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 leading-tight">
             Chaque jour sans YIELD<br />
             <span className="text-blue-200">est un jour à perte nette</span>
           </h2>
-          <p className="text-blue-200 mb-8 max-w-md mx-auto">Rejoignez 120+ chefs qui pilotent leur rendement en temps réel. Démarrez en 2 minutes.</p>
-          <button onClick={onCTA} className="bg-white text-blue-700 font-bold px-10 py-4 rounded-2xl text-base inline-flex items-center gap-2.5 group shadow-glass hover:shadow-card-hover transition-all hover:-translate-y-0.5">
+          <p className="text-blue-200 mb-8 max-w-md mx-auto">
+            Démarrez en 2 minutes. Sans carte bancaire. 14 jours d&apos;essai puis 19,99 € HT/mois.
+          </p>
+          <button
+            onClick={onCTA}
+            className="bg-white text-blue-700 font-bold px-10 py-4 rounded-2xl text-base inline-flex items-center gap-2.5 group shadow-glass hover:shadow-card-hover transition-all hover:-translate-y-0.5"
+          >
             Démarrer YIELD gratuitement
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
           </button>
+
+          {/* Trust strip — sécurité condensée sous le CTA */}
+          <div className="mt-10 pt-8 border-t border-white/15 grid grid-cols-2 md:grid-cols-4 gap-4 text-blue-100">
+            {trustItems.map(({ Icon, label }) => (
+              <div key={label} className="flex items-center justify-center gap-2 text-xs">
+                <Icon size={14} className="text-blue-200 flex-shrink-0" />
+                <span className="font-medium">{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </motion.div>
     </section>
@@ -1533,20 +1418,21 @@ export default function LandingPage() {
       <ShaderBackground />
       <Nav onCTA={() => setShowCTA(true)} />
       <main>
+        {/* Nouvelle composition resserrée pour un chef pressé entre 2 services :
+            Hero → HowItWorks → Avant/Avec → ROI court → FAQ → Story → CTA final.
+            Suppression de StatsSection, RecipesSection (redondant avec étape 04
+            de HowItWorks), SecuritySection (compressée en trust strip). */}
         <HeroSection onCTA={() => setShowCTA(true)} />
         <div className="divider-gradient max-w-6xl mx-auto" />
-        <StatsSection />
-        <div className="divider-gradient max-w-6xl mx-auto" />
         <HowItWorksSection />
-        <RecipesSection />
-        <div className="divider-gradient max-w-6xl mx-auto" />
-        <ROISection />
         <div className="divider-gradient max-w-6xl mx-auto" />
         <BenefitsSection />
         <div className="divider-gradient max-w-6xl mx-auto" />
-        <StorySection />
+        <ROISection />
         <div className="divider-gradient max-w-6xl mx-auto" />
-        <SecuritySection />
+        <FAQSection />
+        <div className="divider-gradient max-w-6xl mx-auto" />
+        <StorySection />
         <FinalCTABanner onCTA={() => setShowCTA(true)} />
       </main>
       <Footer />
