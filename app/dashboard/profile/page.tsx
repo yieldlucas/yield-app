@@ -215,6 +215,7 @@ export default function ProfilePage() {
         invalid_code: "Ce code n'existe pas. Vérifiez avec votre parrain.",
         self_referral: "Vous ne pouvez pas utiliser votre propre code.",
         duplicate_account: "Un autre compte avec un email similaire existe déjà. Le bonus ne peut pas être appliqué.",
+        already_subscribed: "Vous avez déjà un abonnement actif — le code parrain n'est disponible que pour les nouveaux essais.",
         not_authenticated: "Session expirée. Rechargez la page.",
         unknown: "Une erreur est survenue. Réessayez dans un instant.",
       };
@@ -415,11 +416,14 @@ export default function ProfilePage() {
               Parrainage
             </h2>
 
-            {/* ── Sous-bloc 1 : "J'ai un code parrain" ── */}
-            {/* Visible seulement si l'user n'a pas encore été parrainé. Une
-                fois appliqué, ce bloc disparait au profit du bloc "Vous avez
-                été parrainé par CODE" ci-dessous. */}
-            {!founder.referredByCode && !applySuccess && (
+            {/* ── Sous-bloc 1 : "J'ai un code parrain" ──
+                Affichage limité aux users non-abonnés (en essai) :
+                - Pas encore parrainé (referredByCode null)
+                - Pas en abonnement actif (sinon = boucle abusive abonné ⇄
+                  abonné qui s'accumuleraient mutuellement des jours latents)
+                Le check est dupliqué côté serveur dans la RPC (migration 018)
+                — le masquage UI est juste un cleanup visuel. */}
+            {!founder.referredByCode && !applySuccess && !profile?.is_subscribed && (
               <div className="card rounded-2xl p-5 mb-3 border border-blue-100 bg-blue-50/40">
                 <div className="flex items-start gap-3 mb-3">
                   <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 border border-blue-100">

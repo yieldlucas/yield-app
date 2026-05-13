@@ -66,7 +66,7 @@ export async function fetchReferralCount(referralCode: string): Promise<number> 
 export type ApplyReferralResult =
   | { ok: true; daysCredited: number; alreadyApplied?: false }
   | { ok: true; alreadyApplied: true; daysCredited?: undefined }
-  | { ok: false; error: "invalid_code" | "self_referral" | "duplicate_account" | "not_authenticated" | "unknown" };
+  | { ok: false; error: "invalid_code" | "self_referral" | "duplicate_account" | "already_subscribed" | "not_authenticated" | "unknown" };
 
 /** Applique un code parrain via la RPC sécurisée (migration 017).
  *
@@ -93,7 +93,7 @@ export async function applyReferralCode(code: string): Promise<ApplyReferralResu
   } | null;
   if (!result) return { ok: false, error: "unknown" };
   if (result.ok === false) {
-    const validErrors = ["invalid_code", "self_referral", "duplicate_account", "not_authenticated"] as const;
+    const validErrors = ["invalid_code", "self_referral", "duplicate_account", "already_subscribed", "not_authenticated"] as const;
     type ErrCode = (typeof validErrors)[number];
     const errCode = result.error && (validErrors as readonly string[]).includes(result.error)
       ? (result.error as ErrCode)
