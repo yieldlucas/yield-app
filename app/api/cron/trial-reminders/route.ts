@@ -42,32 +42,50 @@ export async function GET(req: NextRequest) {
       throw unauthorized();
     }
 
-    // Fenêtre [J-11.5d, J-10.5d] sur created_at (UTC).
+    // Le trial gate utilise MAX(14, trial_extra_days). Pour un parrainé
+    // (+30j), la vraie fin est à J+30, pas J+14. On ne peut pas pré-calculer
+    // une fenêtre simple côté DB sans connaitre le trialExtraDays de chaque
+    // profil → on récupère TOUS les non-abonnés des 90 derniers jours puis
+    // on filtre côté Node par fenêtre J-3 relative à leur essai effectif.
     const now = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
-    const elapsedMs = (TRIAL_DAYS - REMINDER_LEAD_DAYS) * dayMs; // 11 jours
-    const windowEnd = new Date(now - (elapsedMs - dayMs / 2)).toISOString();   // J-10.5
-    const windowStart = new Date(now - (elapsedMs + dayMs / 2)).toISOString(); // J-11.5
+    const ninetyDaysAgo = new Date(now - 90 * dayMs).toISOString();
 
     const sb = getServiceClient();
     const { data: profiles, error } = await sb
       .from("profiles")
-      .select("id, email, created_at, restaurant_name")
+      .select("id, email, created_at, restaurant_name, trial_extra_days, trial_reminder_sent_at")
       .eq("is_subscribed", false)
-      .gte("created_at", windowStart)
-      .lt("created_at", windowEnd);
+      .gte("created_at", ninetyDaysAgo)
+      .is("trial_reminder_sent_at", null);
 
     if (error) {
       logger.error("cron/trial-reminders", "DB query failed", { message: error.message });
       throw new Error(error.message);
     }
 
-    const targets = (profiles ?? []) as {
+    const rawTargets = (profiles ?? []) as {
       id: string;
       email: string | null;
       created_at: string;
       restaurant_name: string | null;
+      trial_extra_days: number | null;
+      trial_reminder_sent_at: string | null;
     }[];
+
+    // Filtre côté Node : on garde uniquement ceux qui sont dans la fenêtre
+    // J-3 de leur essai EFFECTIF (14 ou 30+ selon trial_extra_days).
+    // Fenêtre tolérante de ±12h pour absorber un raté de cron sans rater
+    // l'envoi du lendemain.
+    const targets = rawTargets.filter((p) => {
+      const extra = Math.max(0, Number(p.trial_extra_days) || 0);
+      const effectiveTrialDays = Math.max(TRIAL_DAYS, extra);
+      const trialEndMs = new Date(p.created_at).getTime() + effectiveTrialDays * dayMs;
+      const msToEnd = trialEndMs - now;
+      const lowerBound = (REMINDER_LEAD_DAYS - 0.5) * dayMs;
+      const upperBound = (REMINDER_LEAD_DAYS + 0.5) * dayMs;
+      return msToEnd >= lowerBound && msToEnd <= upperBound;
+    });
 
     // Pour un cron, origin est vide. On privilégie l'env var prod, fallback
     // explicite yieldapp.fr pour que les boutons des emails marchent toujours.
@@ -108,8 +126,18 @@ export async function GET(req: NextRequest) {
           dashboardUrl,
           checkoutUrl,
         });
-        if (ok) sent++;
-        else failed++;
+        if (ok) {
+          sent++;
+          // Idempotency : marque l'envoi pour qu'un retry du cron dans la
+          // même journée ne ré-envoie pas le mail. Best-effort — si l'UPDATE
+          // échoue (RLS, perte de connexion), au pire le user reçoit 2 mails.
+          await sb
+            .from("profiles")
+            .update({ trial_reminder_sent_at: new Date().toISOString() })
+            .eq("id", p.id);
+        } else {
+          failed++;
+        }
       } catch (err) {
         captureException(err, "cron/trial-reminders", { userId: p.id });
         failed++;

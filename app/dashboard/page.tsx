@@ -438,14 +438,15 @@ export default function DashboardPage() {
         const pendingRef = localStorage.getItem("yield_pending_referral_code");
         if (pendingRef) {
           void applyReferralCode(pendingRef).then((res) => {
-            // Codes d'erreur "définitifs" (invalid_code, self_referral,
-            // duplicate_account) → on clear, ça ne sera jamais valide.
+            // Codes "définitifs" → on clear, ça ne re-deviendra jamais valide.
             // "unknown" / "not_authenticated" → on retry au prochain mount.
+            // "rpc_missing" → migration en retard, on retry au prochain mount.
             const isFinal =
               res.ok ||
               res.error === "invalid_code" ||
               res.error === "self_referral" ||
-              res.error === "duplicate_account";
+              res.error === "duplicate_account" ||
+              res.error === "already_subscribed";
             if (isFinal) {
               localStorage.removeItem("yield_pending_referral_code");
             }

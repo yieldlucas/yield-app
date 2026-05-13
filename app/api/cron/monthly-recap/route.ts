@@ -50,14 +50,21 @@ export async function GET(req: NextRequest) {
 
     const sb = getServiceClient();
 
-    // Aggregation côté SQL : on récupère pour chaque user_id le count de BL
-    // processed dans la fenêtre + l'email. Plus efficace que loop côté Node.
-    // On joint via profiles → restaurants → invoices (RLS service role bypass).
+    // Aggregation côté SQL via RPC : pour chaque user_id éligible, on récupère
+    // en une passe count de BL + count alertes du mois + top hausse + count
+    // recettes — TOUT SCOPÉ par user_id côté Postgres (CTE user_restaurants).
+    // Migration 020 a fixé un bug critique : avant, les stats secondaires
+    // (top alerte, count alertes, count recettes) étaient queries globales
+    // non scopées → chaque chef recevait les stats de toute la base.
     type Row = {
       user_id: string;
       email: string;
       restaurant_name: string | null;
       invoices_count: number;
+      alerts_count_period: number;
+      recipes_total: number;
+      top_rise_product: string | null;
+      top_rise_pct: number | null;
     };
 
     const { data: candidates, error: candidatesErr } = await sb.rpc(
@@ -78,56 +85,57 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, skipped: true });
     }
 
-    const targets = (candidates ?? []) as Row[];
+    const allCandidates = (candidates ?? []) as Row[];
     const appUrl = process.env.NEXT_PUBLIC_APP_URL
       ?? req.headers.get("origin")
       ?? "https://www.yieldapp.fr";
     const dashboardUrl = `${appUrl}/dashboard`;
 
+    // Idempotency : on filtre les users déjà notifiés ce mois-ci. Si le cron
+    // est re-trigger (panne, redéploiement), on skip plutôt que d'envoyer
+    // un 2e mail. Best-effort : si la colonne n'existe pas (migration 020
+    // pas appliquée), la query bail vers le fallback (tous éligibles).
+    const userIds = allCandidates.map((c) => c.user_id);
+    let alreadySent = new Set<string>();
+    if (userIds.length > 0) {
+      const { data: sentRows } = await sb
+        .from("profiles")
+        .select("id, last_monthly_recap_sent_at")
+        .in("id", userIds)
+        .gte("last_monthly_recap_sent_at", monthEnd.toISOString());
+      alreadySent = new Set(
+        ((sentRows ?? []) as { id: string }[]).map((r) => r.id),
+      );
+    }
+    const targets = allCandidates.filter((t) => !alreadySent.has(t.user_id));
+
     let sent = 0;
     let failed = 0;
+    let skipped = allCandidates.length - targets.length;
 
     for (const t of targets) {
       try {
-        // Plus grosse hausse du mois pour ce user : 1 query par chef
-        // (acceptable < 100 chefs/mois). Si volume monte, on précompute en RPC.
-        const { data: topAlert } = await sb
-          .from("margin_alerts")
-          .select("price_change_pct, product:products(name)")
-          .gte("created_at", monthStart.toISOString())
-          .lt("created_at", monthEnd.toISOString())
-          .order("price_change_pct", { ascending: false })
-          .limit(1);
-        const top = (topAlert?.[0] ?? null) as
-          | { price_change_pct: number; product: { name: string } | null }
-          | null;
-
-        // Count des recettes existantes (à la date du cron).
-        const { count: recipesCount } = await sb
-          .from("recipes")
-          .select("id", { count: "exact", head: true });
-
-        // Count alertes du mois.
-        const { count: alertsCount } = await sb
-          .from("margin_alerts")
-          .select("id", { count: "exact", head: true })
-          .gte("created_at", monthStart.toISOString())
-          .lt("created_at", monthEnd.toISOString());
-
         const firstName = t.restaurant_name?.trim() || "Chef";
-
         const ok = await sendMonthlyRecapEmail(t.email, {
           firstName,
           monthName,
-          invoicesCount: t.invoices_count,
-          alertsCount: alertsCount ?? 0,
-          biggestRiseProduct: top?.product?.name ?? null,
-          biggestRisePct: top?.price_change_pct ?? null,
-          recipesCount: recipesCount ?? 0,
+          invoicesCount: Number(t.invoices_count) || 0,
+          alertsCount: Number(t.alerts_count_period) || 0,
+          biggestRiseProduct: t.top_rise_product,
+          biggestRisePct: t.top_rise_pct,
+          recipesCount: Number(t.recipes_total) || 0,
           dashboardUrl,
         });
-        if (ok) sent++;
-        else failed++;
+        if (ok) {
+          sent++;
+          // Marque l'envoi → idempotency lors d'un éventuel re-trigger.
+          await sb
+            .from("profiles")
+            .update({ last_monthly_recap_sent_at: new Date().toISOString() })
+            .eq("id", t.user_id);
+        } else {
+          failed++;
+        }
       } catch (err) {
         captureException(err, "cron/monthly-recap", { userId: t.user_id });
         failed++;
@@ -136,11 +144,18 @@ export async function GET(req: NextRequest) {
 
     logger.info("cron/monthly-recap", "batch complete", {
       month: monthName,
-      total: targets.length,
+      total: allCandidates.length,
       sent,
+      skipped,
       failed,
     });
-    return NextResponse.json({ month: monthName, total: targets.length, sent, failed });
+    return NextResponse.json({
+      month: monthName,
+      total: allCandidates.length,
+      sent,
+      skipped,
+      failed,
+    });
   } catch (err) {
     return apiErrorResponse(err, "cron/monthly-recap");
   }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
 import { authorizeBearer } from "@/lib/api-auth";
-import { apiErrorResponse, badRequest, internal } from "@/lib/api-error";
+import { apiErrorResponse, badRequest, conflict, internal } from "@/lib/api-error";
 import { getServiceClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -62,14 +62,28 @@ export async function POST(req: NextRequest) {
     // Un échec de lecture ne doit PAS bloquer le checkout — fallback 14j.
     const { data: profile } = await getServiceClient()
       .from("profiles")
-      .select("created_at, trial_extra_days")
+      .select("created_at, trial_extra_days, is_subscribed")
       .eq("id", userId)
       .maybeSingle();
-    const trialExtraDays = Math.max(
-      0,
-      Number((profile as { trial_extra_days?: number | null } | null)?.trial_extra_days) || 0,
-    );
-    const createdAt = (profile as { created_at?: string | null } | null)?.created_at ?? null;
+    const profileRow = profile as {
+      created_at?: string | null;
+      trial_extra_days?: number | null;
+      is_subscribed?: boolean | null;
+    } | null;
+
+    // Garde-fou critique : un user déjà abonné qui re-hit /api/checkout
+    // (lien direct, vieux state UI, double-clic) créerait une 2e subscription
+    // Stripe → double facturation jusqu'à détection manuelle. On bloque côté
+    // serveur et l'UI doit le rediriger vers /api/billing/portal à la place.
+    if (profileRow?.is_subscribed === true) {
+      throw conflict(
+        "Vous avez déjà un abonnement actif. Gérez-le depuis le portail Stripe.",
+        "ALREADY_SUBSCRIBED",
+      );
+    }
+
+    const trialExtraDays = Math.max(0, Number(profileRow?.trial_extra_days) || 0);
+    const createdAt = profileRow?.created_at ?? null;
     const trialPeriodDays = computeStripeTrialDays(createdAt, trialExtraDays);
 
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
