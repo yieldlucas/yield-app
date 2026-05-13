@@ -282,10 +282,31 @@ export default function DashboardPage() {
   };
   const clearStackAll = async () => { await clearStack(); setStack([]); };
 
-  /** Lance un lot. La logique d'orchestration (callbacks) vit dans _lib/process-batch. */
-  const runBatch = (input: BatchInput[]) =>
-    processBatch(input, {
-      updateItem: (id, patch) => setBatch((b) => b.map((x) => (x.id === id ? { ...x, ...patch } : x))),
+  /** Lance un lot. La logique d'orchestration (callbacks) vit dans _lib/process-batch.
+   *
+   *  Background scan UX : dès qu'un item passe en "processing" (upload OK,
+   *  Vision analyse côté serveur), on auto-close le BatchOverlay après un
+   *  court délai. Le polling existant sur les invoices.processing_step
+   *  prend le relais via les InvoiceCard, sans bloquer l'écran. */
+  const hasAutoClosedRef = useRef(false);
+  const runBatch = (input: BatchInput[]) => {
+    hasAutoClosedRef.current = false;
+    return processBatch(input, {
+      updateItem: (id, patch) => {
+        setBatch((b) => b.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+        // Premier item arrivé côté serveur (upload terminé) → on libère
+        // l'écran. L'analyse Vision continue silencieusement, la card
+        // InvoiceCard correspondante apparaitra en "processing" avec spinner.
+        if (patch.status === "processing" && !hasAutoClosedRef.current) {
+          hasAutoClosedRef.current = true;
+          // 1) Reload immédiat des factures pour que l'InvoiceCard "processing"
+          //    apparaisse dans la timeline dès le retour au dashboard.
+          // 2) Close après 1.2s — laisse le temps de voir "Analyse lancée"
+          //    pour ne pas que le chef se demande si ça a marché.
+          void reloadInvoices();
+          window.setTimeout(() => setBatchOpen(false), 1200);
+        }
+      },
       cancelQueued: (reason) =>
         setBatch((b) => b.map((x) => (x.status === "queued" ? { ...x, status: "error", error: reason } : x))),
       onItemSuccess: async (id, scansUsed) => {
@@ -315,6 +336,7 @@ export default function DashboardPage() {
         void reloadRecentScans();
       },
     }, batchSignalRef.current);
+  };
 
   const sendStack = () => {
     if (stack.length === 0) return;

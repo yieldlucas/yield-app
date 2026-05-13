@@ -133,13 +133,28 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
   }
 
   parsed.items = parsed.items.map((item) => {
-    const quantity = Number(item.quantity) || 0;
-    const unit_price_ht = Number(item.unit_price_ht) || 0;
-    const total_price_ht = Number(item.total_price_ht) || 0;
+    let quantity = Number(item.quantity) || 0;
+    let unit_price_ht = Number(item.unit_price_ht) || 0;
+    let total_price_ht = Number(item.total_price_ht) || 0;
+
+    // ─── Normalisation : recomposer le champ manquant si les 2 autres sont
+    // présents. Cas courant : facture fromager qui n'affiche que "1,5 kg + total
+    // 15,30 €" sans prix au kg → on calcule unit_price = 10,20 €. Sans cette
+    // étape, on stockait quantity ou unit_price à 0 et l'historique de prix
+    // était corrompu (alertes futures à -100% / +∞).
+    if (quantity === 0 && unit_price_ht > 0 && total_price_ht > 0) {
+      quantity = total_price_ht / unit_price_ht;
+    } else if (unit_price_ht === 0 && quantity > 0 && total_price_ht > 0) {
+      unit_price_ht = total_price_ht / quantity;
+    } else if (total_price_ht === 0 && quantity > 0 && unit_price_ht > 0) {
+      total_price_ht = quantity * unit_price_ht;
+    }
+
     // Sanity check : si unit_price × quantity diverge de >5% du total annoncé,
     // l'IA a probablement halluciné un champ. On flag pour revue manuelle au
     // lieu de propager un prix faussé dans price_history (qui pollue les
-    // graphiques à vie).
+    // graphiques à vie). Par construction la normalisation ci-dessus donne
+    // drift = 0, donc needs_review=false sur les lignes reconstruites.
     const expected = unit_price_ht * quantity;
     const drift = total_price_ht > 0
       ? Math.abs(expected - total_price_ht) / total_price_ht

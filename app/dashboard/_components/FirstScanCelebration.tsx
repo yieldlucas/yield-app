@@ -40,47 +40,74 @@ export function FirstScanCelebration({ show, onDismiss }: {
   return (
     <AnimatePresence>
       {visible && (
-        <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 24, scale: 0.96 }}
-          transition={{ type: "spring", damping: 24, stiffness: 280 }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-sm w-[calc(100%-2rem)]"
-        >
-          <div
-            className="rounded-2xl shadow-2xl overflow-hidden text-white"
-            style={{ background: "linear-gradient(135deg, #2563EB 0%, #4F46E5 60%, #7C3AED 100%)" }}
+        <>
+          {/* Backdrop : assombrit le fond, focus total sur le moment. Click
+              au fond ferme le toast (sans interrompre le polling derrière). */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[55] bg-slate-900/40 backdrop-blur-sm"
+            onClick={close}
+          />
+          {/* Toast centré écran. Position : top-1/2 + translate-y-1/2 garantit
+              le centrage parfait quel que soit la hauteur du contenu, vs
+              bottom-6 qui pouvait se faire bouffer par la safe-area iOS. */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.88, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -8 }}
+            transition={{ type: "spring", damping: 22, stiffness: 280 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center p-5 pointer-events-none"
           >
-            {/* Halo décoratif */}
-            <div aria-hidden className="absolute -top-8 -right-8 w-32 h-32 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+            <div
+              className="rounded-3xl shadow-2xl overflow-hidden text-white relative w-full max-w-sm pointer-events-auto"
+              style={{ background: "linear-gradient(135deg, #2563EB 0%, #4F46E5 60%, #7C3AED 100%)" }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Halos décoratifs */}
+              <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+              <div aria-hidden className="absolute -bottom-10 -left-10 w-32 h-32 rounded-full bg-white/10 blur-2xl pointer-events-none" />
 
-            <div className="relative px-5 py-4 flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
-                <Sparkles size={20} className="text-white" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-base leading-tight mb-0.5">
+              <div className="relative px-6 py-7">
+                <button
+                  onClick={close}
+                  className="absolute top-3 right-3 text-white/70 hover:text-white transition-colors p-1"
+                  aria-label="Fermer"
+                >
+                  <X size={18} />
+                </button>
+
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center mx-auto mb-4 shadow-lg">
+                  <Sparkles size={28} className="text-white" />
+                </div>
+
+                <h3 className="font-bold text-xl text-center leading-tight mb-2">
                   Premier scan validé 🎉
-                </p>
-                <p className="text-white/85 text-[13px] leading-snug">
+                </h3>
+                <p className="text-white/90 text-sm text-center leading-relaxed mb-5">
                   Vos prix sont désormais à jour. À chaque livraison, scannez le BL —
                   Yield surveille le reste pour vous.
                 </p>
-                <div className="mt-2.5 flex items-center gap-1.5 text-white/90 text-[11px] font-medium">
-                  <CheckCircle2 size={12} />
-                  Conseil : la 1ère semaine, scannez tous vos BL pour bâtir votre historique.
+
+                <div className="rounded-xl bg-white/15 backdrop-blur-sm border border-white/10 px-3 py-2.5 flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-white flex-shrink-0 mt-0.5" />
+                  <p className="text-white/95 text-[12px] leading-relaxed">
+                    <strong>Conseil de Lucas :</strong> la 1ère semaine, scannez
+                    tous vos BL pour bâtir votre historique.
+                  </p>
                 </div>
+
+                <button
+                  onClick={close}
+                  className="w-full mt-5 py-2.5 rounded-xl bg-white text-blue-700 font-semibold text-sm hover:bg-blue-50 transition-colors"
+                >
+                  C&apos;est parti
+                </button>
               </div>
-              <button
-                onClick={close}
-                className="text-white/70 hover:text-white transition-colors p-0.5 flex-shrink-0"
-                aria-label="Fermer"
-              >
-                <X size={16} />
-              </button>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </>
       )}
     </AnimatePresence>
   );
