@@ -39,7 +39,7 @@ export default function TermsPage() {
           <p>
             Numéro TVA intracommunautaire : <span data-todo>[TODO FRXX...]</span>.<br />
             Directeur de la publication : <span data-todo>[TODO Nom Prénom]</span>.<br />
-            Contact : chef@yield.restaurant.
+            Contact : chef@yieldapp.fr.
           </p>
           <p>
             Hébergeur : Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, USA.<br />
@@ -70,7 +70,7 @@ export default function TermsPage() {
           </p>
           <p>
             Le Client est seul responsable de toutes les activités effectuées sous son compte.
-            Toute connexion suspecte doit être signalée sans délai à chef@yield.restaurant.
+            Toute connexion suspecte doit être signalée sans délai à chef@yieldapp.fr.
           </p>
         </Section>
 
@@ -134,7 +134,7 @@ export default function TermsPage() {
             à compter de la date d&apos;émission d&apos;une facture (essai gratuit, premier
             paiement ou tout renouvellement mensuel), demander le remboursement intégral
             de cette facture en adressant un simple e-mail à
-            chef@yield.restaurant. Aucune justification n&apos;est requise.
+            chef@yieldapp.fr. Aucune justification n&apos;est requise.
           </p>
           <p>
             Le remboursement est effectué sur le moyen de paiement initial dans un délai

@@ -805,7 +805,7 @@ function RefundGuarantee() {
       <p className="text-emerald-800 text-[11px] leading-snug">
         <strong className="text-emerald-900">Garantie 7 jours sans question :</strong>{" "}
         remboursement intégral si demande dans les 7 jours d&apos;une facturation
-        (email à chef@yield.restaurant).
+        (email à chef@yieldapp.fr).
       </p>
     </div>
   );

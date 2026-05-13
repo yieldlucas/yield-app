@@ -846,7 +846,7 @@ function ConciergeButton() {
               Un problème de scan ? Un doute sur un bon ? Notre équipe de restaurateurs vous répond sous 2h.
             </p>
             <a
-              href="mailto:chef@yield.restaurant"
+              href="mailto:chef@yieldapp.fr"
               className="btn-primary w-full py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5"
             >
               <MessageCircle size={13} /> Contacter le concierge
@@ -1384,7 +1384,7 @@ function Footer() {
         <div className="flex gap-6">
           <a href="/terms" className="hover:text-slate-700 transition-colors">CGU</a>
           <a href="/privacy" className="hover:text-slate-700 transition-colors">Confidentialité</a>
-          <a href="mailto:chef@yield.restaurant" className="hover:text-slate-700 transition-colors">Contact</a>
+          <a href="mailto:chef@yieldapp.fr" className="hover:text-slate-700 transition-colors">Contact</a>
         </div>
         <p>© 2026 YIELD. Tous droits réservés.</p>
       </div>

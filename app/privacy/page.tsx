@@ -32,7 +32,7 @@ export default function PrivacyPage() {
             sous le numéro <span data-todo>[TODO SIRET]</span>.
           </p>
           <p>
-            Contact pour toute question relative aux données personnelles : chef@yield.restaurant.
+            Contact pour toute question relative aux données personnelles : chef@yieldapp.fr.
           </p>
         </Section>
 
@@ -149,7 +149,7 @@ export default function PrivacyPage() {
             <li><strong>Droit de réclamation</strong> auprès de la CNIL (cnil.fr).</li>
           </ul>
           <p>
-            Pour exercer ces droits, écrire à chef@yield.restaurant. Réponse sous 30 jours
+            Pour exercer ces droits, écrire à chef@yieldapp.fr. Réponse sous 30 jours
             maximum.
           </p>
         </Section>

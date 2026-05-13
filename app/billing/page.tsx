@@ -193,7 +193,7 @@ function RefundGuarantee() {
         </p>
         <p className="text-emerald-800/80 text-[11px] leading-snug mt-0.5">
           Remboursement intégral sans question dans les 7 jours suivant toute
-          facturation. Un email à chef@yield.restaurant suffit.
+          facturation. Un email à chef@yieldapp.fr suffit.
         </p>
       </div>
     </div>

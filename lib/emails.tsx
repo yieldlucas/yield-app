@@ -27,10 +27,10 @@ import MonthlyRecapEmail, {
 } from "./emails/templates/MonthlyRecap";
 
 /** Adresse expéditrice. Doit appartenir au domaine vérifié dans Resend. */
-const FROM = "Yield <chef@yield.restaurant>";
+const FROM = "Yield <chef@yieldapp.fr>";
 
 /** Adresse de réponse. Quand un chef répond au mail welcome / J-3, ça arrive
- *  ici (boîte Gmail perso de Lucas) plutôt que sur chef@yield.restaurant qui
+ *  ici (boîte Gmail perso de Lucas) plutôt que sur chef@yieldapp.fr qui
  *  n'est qu'une adresse d'envoi technique. */
 const REPLY_TO = "Lucas (Yield) <lucasyieldapp@gmail.com>";
 

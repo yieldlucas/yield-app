@@ -32,7 +32,7 @@ const FAQ_ITEMS: { q: string; Icon: typeof Database; a: string }[] = [
   {
     q: "Contacter un humain",
     Icon: Headphones,
-    a: "L'équipe YIELD répond sous 2h en jours ouvrés (anciens chefs et restaurateurs). Email : chef@yield.restaurant — précisez votre numéro et l'urgence, on vous rappelle si besoin.",
+    a: "L'équipe YIELD répond sous 2h en jours ouvrés (anciens chefs et restaurateurs). Email : chef@yieldapp.fr — précisez votre numéro et l'urgence, on vous rappelle si besoin.",
   },
 ];
 
@@ -130,7 +130,7 @@ export function ConciergeButton() {
                 })}
 
                 <a
-                  href="mailto:chef@yield.restaurant?subject=Aide%20YIELD"
+                  href="mailto:chef@yieldapp.fr?subject=Aide%20YIELD"
                   className="btn-primary w-full mt-2 py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
                 >
                   <Headphones size={15} /> Écrire à l&apos;équipe
