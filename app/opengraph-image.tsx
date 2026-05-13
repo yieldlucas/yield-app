@@ -54,22 +54,41 @@ export default async function OGImage() {
           }}
         />
 
-        {/* Header — logo + tag */}
+        {/* Header — logo toque-Y + tag */}
         <div style={{ display: "flex", alignItems: "center", gap: 16, position: "relative" }}>
           <div
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              background: "rgba(255,255,255,0.18)",
-              backdropFilter: "blur(10px)",
+              width: 72,
+              height: 72,
+              borderRadius: 18,
+              background: "rgba(255,255,255,0.15)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: 32,
             }}
           >
-            👨‍🍳
+            <svg
+              width="48"
+              height="48"
+              viewBox="0 0 100 100"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              {/* Toque chef */}
+              <circle cx="30" cy="34" r="13" fill="white" />
+              <circle cx="50" cy="25" r="15" fill="white" />
+              <circle cx="70" cy="34" r="13" fill="white" />
+              <rect x="22" y="40" width="56" height="32" fill="white" />
+              <rect x="20" y="70" width="60" height="10" rx="3" fill="white" />
+              {/* Y monogramme */}
+              <path
+                d="M 38 46 L 50 60 L 62 46 M 50 60 L 50 73"
+                stroke="#2563EB"
+                strokeWidth="9"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </div>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div
