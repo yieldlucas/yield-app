@@ -404,8 +404,12 @@ export default function ProfilePage() {
           </section>
         )}
 
-        {/* ─── Parrainage — code à partager + filleuls + saisie manuelle ─── */}
-        {founder?.referralCode && (
+        {/* ─── Parrainage — saisie d'un code reçu + code à partager + filleuls ───
+            La section apparait dès que founder est chargé, même si l'user n'a
+            pas ENCORE son propre code (assign_founder_metadata pas encore
+            tournée). Sinon, un filleul qui veut juste saisir un code reçu
+            via SMS n'avait nulle part où le faire. */}
+        {founder && (
           <section>
             <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">
               Parrainage
@@ -483,7 +487,10 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* ── Sous-bloc 2 : "Parrainez un collègue" — votre code à partager ── */}
+            {/* ── Sous-bloc 2 : "Parrainez un collègue" — votre code à partager.
+                Affiché seulement si l'user a un referralCode (sinon le bloc
+                "Votre code en cours de génération" ci-dessous prend la place). */}
+            {founder.referralCode ? (
             <div className="card rounded-2xl p-5">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-100 to-blue-100 flex items-center justify-center flex-shrink-0">
@@ -548,6 +555,24 @@ export default function ProfilePage() {
                 )}
               </div>
             </div>
+            ) : (
+              /* Code en cours de génération — backfill assign_founder_metadata
+                 pas encore tourné ou migration 016 pas appliquée. Informatif
+                 plutôt que cacher silencieusement. */
+              <div className="card rounded-2xl p-4 border border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center flex-shrink-0">
+                  <Share2 size={15} className="text-slate-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-700 text-[13px] font-semibold leading-tight">
+                    Votre code parrain est en cours de génération
+                  </p>
+                  <p className="text-slate-400 text-[11px] leading-snug mt-0.5">
+                    Rechargez la page dans quelques secondes. Vous pourrez alors le partager.
+                  </p>
+                </div>
+              </div>
+            )}
           </section>
         )}
 
