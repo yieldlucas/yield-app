@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 import {
   ChefHat, ArrowLeft, Mail, Building2, Crown, ShieldCheck,
   CreditCard, AlertTriangle, CheckCircle2, Copy, Gift, LogOut, Salad,
-  Sparkles, Star,
+  Share2, Sparkles, Star, XCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabase-browser";
 import { clearStack } from "@/lib/scan-stack";
 import { PageSpinner } from "../_components/PageSpinner";
 import {
-  fetchFounderInfo, fetchYourHistory, fetchReferralCount,
+  fetchFounderInfo, fetchYourHistory, fetchReferralCount, applyReferralCode,
   type FounderInfo, type YourHistory,
 } from "../_lib/founder-data";
 
@@ -42,6 +42,13 @@ export default function ProfilePage() {
   const [history, setHistory] = useState<YourHistory | null>(null);
   const [referralCount, setReferralCount] = useState<number>(0);
   const [codeCopied, setCodeCopied] = useState(false);
+  // Saisie manuelle d'un code parrain (filleul qui n'est pas passé par le
+  // lien). Erreurs typées renvoyées par la RPC → message contextuel pour
+  // que l'user comprenne pourquoi son code est refusé.
+  const [manualCode, setManualCode] = useState("");
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applySuccess, setApplySuccess] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -177,6 +184,74 @@ export default function ProfilePage() {
     await clearStack();
     await supabase.auth.signOut();
     router.replace("/");
+  };
+
+  /** Application manuelle d'un code parrain (l'user n'est pas passé par le
+   *  lien ?ref=). Appelle la même RPC sécurisée que le flow auto.
+   *  Affiche un message contextuel selon l'erreur typée renvoyée. */
+  const submitManualCode = async () => {
+    const code = manualCode.trim().toUpperCase();
+    if (code.length < 4) {
+      setApplyError("Code trop court. Format attendu : LETTRES-CHIFFRES (ex. MARC-A8F2).");
+      return;
+    }
+    setApplying(true);
+    setApplyError(null);
+    setApplySuccess(false);
+    const res = await applyReferralCode(code);
+    setApplying(false);
+    if (res.ok) {
+      if (res.alreadyApplied) {
+        setApplyError("Votre compte a déjà été parrainé.");
+      } else {
+        setApplySuccess(true);
+        setManualCode("");
+        // Refresh founder info pour mettre à jour referredByCode dans l'UI.
+        const fresh = await fetchFounderInfo();
+        setFounder(fresh);
+      }
+    } else {
+      const messages: Record<string, string> = {
+        invalid_code: "Ce code n'existe pas. Vérifiez avec votre parrain.",
+        self_referral: "Vous ne pouvez pas utiliser votre propre code.",
+        duplicate_account: "Un autre compte avec un email similaire existe déjà. Le bonus ne peut pas être appliqué.",
+        not_authenticated: "Session expirée. Rechargez la page.",
+        unknown: "Une erreur est survenue. Réessayez dans un instant.",
+      };
+      setApplyError(messages[res.error] ?? messages.unknown);
+    }
+  };
+
+  /** Partage natif via Web Share API (ouvre WhatsApp / SMS / Mail sur mobile,
+   *  fallback copy-to-clipboard sur desktop). Le message inclut le lien
+   *  complet ?ref=CODE pour que le clic active automatiquement le bonus. */
+  const shareReferral = async () => {
+    if (!founder?.referralCode) return;
+    if (typeof navigator === "undefined") return;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.yieldapp.fr";
+    const url = `${appUrl}/?ref=${founder.referralCode}`;
+    const text = `Je te parraine sur Yield (app pour surveiller les marges en cuisine). On a chacun 1 mois gratuit. Lien direct : ${url}`;
+    // Tente le partage natif (Web Share API) → ouvre WhatsApp/SMS/Mail
+    // selon ce que l'OS propose. Si absent ou user annule, fallback copy.
+    const nav = navigator as Navigator & {
+      share?: (data: { title?: string; text?: string; url?: string }) => Promise<void>;
+    };
+    if (typeof nav.share === "function") {
+      try {
+        await nav.share({ title: "Yield · Parrainage", text, url });
+        return;
+      } catch {
+        // Annulation user ou pas de target compatible → on tombe sur le fallback
+      }
+    }
+    // Fallback desktop : copie l'URL complète dans le presse-papiers.
+    try {
+      await nav.clipboard.writeText(url);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      // Sans Clipboard API → l'user fera select-all manuellement sur le code.
+    }
   };
 
   if (loading) return <PageSpinner />;
@@ -329,32 +404,119 @@ export default function ProfilePage() {
           </section>
         )}
 
-        {/* ─── Parrainage — code à partager + filleuls ─── */}
+        {/* ─── Parrainage — code à partager + filleuls + saisie manuelle ─── */}
         {founder?.referralCode && (
           <section>
             <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">
-              Parrainez un collègue
+              Parrainage
             </h2>
+
+            {/* ── Sous-bloc 1 : "J'ai un code parrain" ── */}
+            {/* Visible seulement si l'user n'a pas encore été parrainé. Une
+                fois appliqué, ce bloc disparait au profit du bloc "Vous avez
+                été parrainé par CODE" ci-dessous. */}
+            {!founder.referredByCode && !applySuccess && (
+              <div className="card rounded-2xl p-5 mb-3 border border-blue-100 bg-blue-50/40">
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center flex-shrink-0 border border-blue-100">
+                    <Gift size={18} className="text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-slate-900 font-bold text-sm leading-tight">
+                      Vous avez un code parrain ?
+                    </p>
+                    <p className="text-slate-500 text-[12px] leading-snug mt-0.5">
+                      Saisissez-le pour recevoir <strong>30 jours d&apos;essai supplémentaires</strong>.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={manualCode}
+                    onChange={(e) => {
+                      setManualCode(e.target.value.toUpperCase());
+                      if (applyError) setApplyError(null);
+                    }}
+                    onKeyDown={(e) => { if (e.key === "Enter") void submitManualCode(); }}
+                    placeholder="MARC-A8F2"
+                    maxLength={20}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-400 bg-white"
+                  />
+                  <button
+                    onClick={() => void submitManualCode()}
+                    disabled={applying || manualCode.trim().length < 4}
+                    className="btn-primary px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {applying ? (
+                      <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Activation…</>
+                    ) : "Activer"}
+                  </button>
+                </div>
+                {applyError && (
+                  <p className="mt-2 text-rose-600 text-[12px] flex items-start gap-1.5" role="alert">
+                    <XCircle size={13} className="flex-shrink-0 mt-0.5" /> {applyError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ── Confirmation si user vient d'appliquer un code manuellement ── */}
+            {applySuccess && (
+              <div className="card rounded-2xl p-4 mb-3 border border-emerald-200 bg-emerald-50">
+                <p className="text-emerald-800 text-sm font-semibold flex items-center gap-2">
+                  <CheckCircle2 size={16} /> Bonus activé : 30 jours d&apos;essai supplémentaires ajoutés à votre compte.
+                </p>
+              </div>
+            )}
+
+            {/* ── Info "Vous avez été parrainé par ..." si déjà appliqué ── */}
+            {founder.referredByCode && !applySuccess && (
+              <div className="card rounded-2xl p-4 mb-3 border border-emerald-100 bg-emerald-50/40 flex items-center gap-3">
+                <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                <p className="text-slate-700 text-sm">
+                  Vous avez été parrainé par <strong className="font-mono text-slate-900">{founder.referredByCode}</strong>.
+                  Bonus de 30 jours actif.
+                </p>
+              </div>
+            )}
+
+            {/* ── Sous-bloc 2 : "Parrainez un collègue" — votre code à partager ── */}
             <div className="card rounded-2xl p-5">
               <div className="flex items-start gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-100 to-blue-100 flex items-center justify-center flex-shrink-0">
-                  <Gift size={18} className="text-emerald-700" />
+                  <Share2 size={18} className="text-emerald-700" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-slate-900 font-bold text-sm leading-tight">
-                    1 mois offert pour vous et lui
+                    Parrainez un collègue
                   </p>
                   <p className="text-slate-500 text-[12px] leading-snug mt-0.5">
-                    Quand un chef s&apos;inscrit avec votre code, vous gagnez tous les deux 1 mois gratuit.
+                    1 mois offert pour vous deux quand il s&apos;inscrit avec votre code.
                   </p>
                 </div>
               </div>
 
-              {/* Code copiable */}
-              <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
-                <div className="flex-1 px-2 py-1 font-mono font-bold text-slate-900 tracking-wider text-lg tabular-nums select-all">
+              {/* Code affiché */}
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 text-center mb-3">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Votre code parrain
+                </p>
+                <div className="font-mono font-bold text-slate-900 tracking-wider text-2xl tabular-nums select-all">
                   {founder.referralCode}
                 </div>
+              </div>
+
+              {/* 2 boutons : Partager (natif WhatsApp/SMS/Mail) + Copier le lien */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => void shareReferral()}
+                  className="btn-primary py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
+                >
+                  <Share2 size={14} /> Partager le lien
+                </button>
                 <button
                   onClick={async () => {
                     if (!founder.referralCode) return;
@@ -363,13 +525,12 @@ export default function ProfilePage() {
                       setCodeCopied(true);
                       setTimeout(() => setCodeCopied(false), 2000);
                     } catch {
-                      // Clipboard API peut être bloquée sur iOS hors HTTPS, on
-                      // bascule sur un fallback select-all sur le span ci-dessus.
+                      // Clipboard bloquée → fallback sur select-all manuel
                     }
                   }}
-                  className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="py-2.5 rounded-xl text-xs font-semibold border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 flex items-center justify-center gap-1.5 transition-colors"
                 >
-                  {codeCopied ? <><CheckCircle2 size={13} /> Copié</> : <><Copy size={13} /> Copier</>}
+                  {codeCopied ? <><CheckCircle2 size={13} /> Copié</> : <><Copy size={13} /> Copier code</>}
                 </button>
               </div>
 
