@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft, CheckCircle2, ChefHat, ChevronRight, Crown, Settings,
+  ArrowLeft, CheckCircle2, ChefHat, ChevronRight, Crown, Settings, ShieldCheck,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 
@@ -170,7 +170,33 @@ function CheckoutView({ onCheckout, loading }: { onCheckout: () => void; loading
           </>
         )}
       </button>
+
+      <RefundGuarantee />
     </>
+  );
+}
+
+/** Callout "Garantie 7j sans question" — sert deux objectifs :
+ *  1. Rassure le chef qui hésite à entrer sa CB (effet conversion connu).
+ *  2. Cadre publiquement notre politique : remboursement intégral si demande
+ *     dans les 7j d'une facturation. Au-delà, plus de refund automatique →
+ *     cap le risque chargebacks à 2-3 semaines après renouvellement plutôt
+ *     que 60-90j (délai légal des banques).
+ *  Doit rester aligné avec la clause CGU §6 (terms/page.tsx). */
+function RefundGuarantee() {
+  return (
+    <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 flex items-start gap-2.5">
+      <ShieldCheck size={16} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-emerald-900 text-[13px] font-semibold leading-tight">
+          Garantie satisfait ou remboursé 7 jours
+        </p>
+        <p className="text-emerald-800/80 text-[11px] leading-snug mt-0.5">
+          Remboursement intégral sans question dans les 7 jours suivant toute
+          facturation. Un email à chef@yield.restaurant suffit.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -205,6 +231,8 @@ function SubscribedView({ onPortal, loading }: { onPortal: () => void; loading: 
           </>
         )}
       </button>
+
+      <RefundGuarantee />
     </>
   );
 }

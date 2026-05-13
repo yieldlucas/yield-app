@@ -122,6 +122,32 @@ export default function TermsPage() {
           </p>
         </Section>
 
+        <Section title="6 bis. Garantie satisfait ou remboursé (7 jours)">
+          <p>
+            Indépendamment de l&apos;exclusion légale du droit de rétractation B2B
+            visée à l&apos;article 5, Yield consent contractuellement au Client une
+            <strong> garantie « satisfait ou remboursé »</strong> portant sur toute
+            facturation effectuée au titre de l&apos;abonnement.
+          </p>
+          <p>
+            Le Client peut, dans un délai de <strong>sept (7) jours calendaires</strong>
+            à compter de la date d&apos;émission d&apos;une facture (essai gratuit, premier
+            paiement ou tout renouvellement mensuel), demander le remboursement intégral
+            de cette facture en adressant un simple e-mail à
+            chef@yield.restaurant. Aucune justification n&apos;est requise.
+          </p>
+          <p>
+            Le remboursement est effectué sur le moyen de paiement initial dans un délai
+            maximum de quatorze (14) jours suivant la réception de la demande. L&apos;accès
+            au Service est résilié au moment du remboursement.
+          </p>
+          <p>
+            Au-delà de ce délai de sept (7) jours, les sommes versées ne sont plus
+            remboursables, conformément aux articles 5 et 6 ci-dessus, sauf accord
+            commercial exceptionnel et écrit de Yield.
+          </p>
+        </Section>
+
         <Section title="7. Disponibilité et qualité du service">
           <p>
             Yield s&apos;engage à fournir le Service avec diligence, dans le respect d&apos;une

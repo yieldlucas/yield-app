@@ -618,6 +618,7 @@ export default function ProfilePage() {
               <p className="text-slate-400 text-[11px] text-center mt-3">
                 Mise à jour de la carte, factures, résiliation — directement chez Stripe.
               </p>
+              <RefundGuarantee />
             </div>
           ) : (() => {
             // 3ème état : essai parrainé Starter Pro actif (30j au lieu de 14).
@@ -665,6 +666,9 @@ export default function ProfilePage() {
                         <><div className="w-4 h-4 border-2 border-emerald-200 border-t-emerald-700 rounded-full animate-spin" /> Ouverture du paiement…</>
                       ) : "Activer mon abonnement maintenant"}
                     </button>
+                    <p className="text-white/85 text-[11px] text-center mt-2.5 flex items-center justify-center gap-1.5">
+                      <ShieldCheck size={12} /> Garantie satisfait ou remboursé 7 jours après facturation
+                    </p>
                   </div>
                 </div>
               );
@@ -695,6 +699,9 @@ export default function ProfilePage() {
                       <><div className="w-4 h-4 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin" /> Ouverture du paiement…</>
                     ) : "Démarrer l'essai"}
                   </button>
+                  <p className="text-blue-100 text-[11px] text-center mt-2.5 flex items-center justify-center gap-1.5">
+                    <ShieldCheck size={12} /> Garantie satisfait ou remboursé 7 jours après facturation
+                  </p>
                 </div>
               </div>
             );
@@ -783,6 +790,23 @@ export default function ProfilePage() {
 
         <p className="text-center text-slate-300 text-xs pt-4 pb-2">YIELD · v1.0</p>
       </div>
+    </div>
+  );
+}
+
+/** Callout "Garantie 7j" affiché sur la carte abonnement (état subscribed).
+ *  Doit rester aligné avec la clause CGU §6 (terms/page.tsx) et le callout
+ *  équivalent dans /billing. Sans question = pas de friction côté chef +
+ *  cap notre risque chargebacks (au-delà de 7j, plus de refund auto). */
+function RefundGuarantee() {
+  return (
+    <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2.5 flex items-start gap-2">
+      <ShieldCheck size={14} className="text-emerald-600 flex-shrink-0 mt-0.5" />
+      <p className="text-emerald-800 text-[11px] leading-snug">
+        <strong className="text-emerald-900">Garantie 7 jours sans question :</strong>{" "}
+        remboursement intégral si demande dans les 7 jours d&apos;une facturation
+        (email à chef@yield.restaurant).
+      </p>
     </div>
   );
 }
