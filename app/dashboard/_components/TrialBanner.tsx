@@ -43,7 +43,7 @@ export function TrialBanner({
         </div>
         <p className="text-lg font-bold mb-1">14 jours offerts</p>
         <p className="text-blue-100 text-sm mb-4">
-          Scans illimités, alertes temps réel, conciergerie chef. Sans engagement, résiliable en 1 clic.
+          200 scans par mois, alertes temps réel, conciergerie chef. Sans engagement, résiliable en 1 clic.
         </p>
         <button
           onClick={onStart}

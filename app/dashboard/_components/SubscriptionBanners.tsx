@@ -36,8 +36,8 @@ export function ActivatedBanner({ show }: { show: boolean }) {
         <CheckCircle2 size={18} className="text-white" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-emerald-900 font-semibold text-sm">Bienvenue chez YIELD Pro</p>
-        <p className="text-emerald-700 text-xs">Scans illimités, alertes temps réel, conciergerie.</p>
+        <p className="text-emerald-900 font-semibold text-sm">Bienvenue chez YIELD Starter</p>
+        <p className="text-emerald-700 text-xs">200 scans par mois, alertes temps réel, conciergerie.</p>
       </div>
     </motion.div>
   );

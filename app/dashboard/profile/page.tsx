@@ -600,8 +600,8 @@ export default function ProfilePage() {
                   <Crown size={16} className="text-blue-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-slate-900 font-semibold text-sm">YIELD Pro</p>
-                  <p className="text-slate-400 text-xs">Scans illimités · Alertes temps réel · Conciergerie</p>
+                  <p className="text-slate-900 font-semibold text-sm">YIELD Starter</p>
+                  <p className="text-slate-400 text-xs">200 scans/mois · Alertes temps réel · Conciergerie</p>
                 </div>
               </div>
               <button
@@ -652,7 +652,7 @@ export default function ProfilePage() {
                       </span>
                     </div>
                     <p className="text-white/90 text-sm mb-1">
-                      Scans illimités, alertes prix temps réel, conciergerie chef.
+                      200 scans par mois, alertes prix temps réel, conciergerie chef.
                     </p>
                     <p className="text-white/80 text-xs mb-4">
                       À la fin de l&apos;essai parrainé : <strong className="text-white">19,99 € HT/mois</strong> · Sans engagement
@@ -681,7 +681,7 @@ export default function ProfilePage() {
                 <div className="relative">
                   <div className="flex items-center gap-2 mb-2">
                     <Crown size={14} className="text-blue-200" />
-                    <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">YIELD Pro</span>
+                    <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">YIELD Starter</span>
                   </div>
                   <p className="text-2xl font-bold mb-1">14 jours offerts</p>
                   <p className="text-blue-100 text-sm mb-1">
