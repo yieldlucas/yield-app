@@ -15,6 +15,7 @@ import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
 import { StackTray } from "./_components/StackTray";
 import { TrialBanner } from "./_components/TrialBanner";
+import { ReferralTrialBanner } from "./_components/ReferralTrialBanner";
 import { OnboardingModal } from "./_components/OnboardingModal";
 import { ConciergeButton } from "./_components/ConciergeButton";
 import { BatchOverlay } from "./_components/BatchOverlay";
@@ -30,7 +31,7 @@ import { FounderLetter } from "./_components/FounderLetter";
 import { ReferralAppliedToast } from "./_components/ReferralAppliedToast";
 import {
   fetchFounderInfo, markFounderLetterSeen, applyReferralCode,
-  ensureFounderMetadata, type FounderInfo,
+  ensureFounderMetadata, computeTrialDaysLeft, type FounderInfo,
 } from "./_lib/founder-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
@@ -519,6 +520,19 @@ export default function DashboardPage() {
    *  d'email qui produit des greetings moches ("Bonjour, lucasyieldapp"). */
   const displayName = restaurantName.trim() || "Chef";
 
+  /** Statut essai parrainé : si l'user a un trial_extra_days > 0 et n'est
+   *  pas encore abonné, on affiche le ReferralTrialBanner (30j Starter Pro)
+   *  à la place du TrialBanner classique 14j. Évite de pousser une offre
+   *  obsolète à un user qui a déjà un bonus actif. */
+  const trialStatus = founderInfo
+    ? computeTrialDaysLeft(founderInfo.createdAt, founderInfo.trialExtraDays)
+    : null;
+  const isReferredTrialActive =
+    !isSubscribed
+    && trialStatus != null
+    && trialStatus.isReferred
+    && trialStatus.daysLeft > 0;
+
   /** Salutation time-aware : "Bonjour" le matin, "Bon service" en pleine
    *  journée, "Bonsoir" en soirée. Reflète mieux le rythme d'un chef qui
    *  ouvre Yield à différents moments (livraisons matin, contrôle service). */
@@ -596,7 +610,20 @@ export default function DashboardPage() {
         <ActivatedBanner show={subscriptionActivated} />
         <PaymentRequiredBanner show={paymentRequired} loading={checkoutLoading} onCheckout={startCheckout} />
         {!paymentRequired && (
-          <TrialBanner show={showTrial} loading={checkoutLoading} onStart={startCheckout} onDismiss={dismissTrial} />
+          isReferredTrialActive && trialStatus ? (
+            // Essai parrainé Starter Pro 30j : on remplace l'offre 14j par
+            // un bandeau qui confirme le statut + compteur jours restants.
+            <ReferralTrialBanner
+              show={showTrial}
+              daysLeft={trialStatus.daysLeft}
+              totalDays={trialStatus.totalDays}
+              onSubscribe={startCheckout}
+              onDismiss={dismissTrial}
+              loading={checkoutLoading}
+            />
+          ) : (
+            <TrialBanner show={showTrial} loading={checkoutLoading} onStart={startCheckout} onDismiss={dismissTrial} />
+          )
         )}
         <BillingErrorBanner message={billingError} onRefresh={refreshBilling} onDismiss={() => setBillingError(null)} />
 

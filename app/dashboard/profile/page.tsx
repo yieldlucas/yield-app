@@ -14,7 +14,7 @@ import { clearStack } from "@/lib/scan-stack";
 import { PageSpinner } from "../_components/PageSpinner";
 import {
   fetchFounderInfo, fetchYourHistory, fetchReferralCount, applyReferralCode,
-  ensureFounderMetadata,
+  ensureFounderMetadata, computeTrialDaysLeft,
   type FounderInfo, type YourHistory,
 } from "../_lib/founder-data";
 
@@ -619,33 +619,86 @@ export default function ProfilePage() {
                 Mise à jour de la carte, factures, résiliation — directement chez Stripe.
               </p>
             </div>
-          ) : (
-            <div className="rounded-2xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8, #2563EB 50%, #4F46E5)" }}>
-              <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 80% 30%, rgba(255,255,255,0.14) 0%, transparent 60%)" }} />
-              <div className="relative">
-                <div className="flex items-center gap-2 mb-2">
-                  <Crown size={14} className="text-blue-200" />
-                  <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">YIELD Pro</span>
-                </div>
-                <p className="text-2xl font-bold mb-1">14 jours offerts</p>
-                <p className="text-blue-100 text-sm mb-1">
-                  200 scans / mois, alertes prix temps réel, conciergerie chef.
-                </p>
-                <p className="text-blue-200 text-xs mb-4">
-                  Puis <strong className="text-white">19,99 € HT/mois</strong> · Sans engagement · Résiliable en 1 clic
-                </p>
-                <button
-                  onClick={startCheckout}
-                  disabled={checkoutLoading}
-                  className="w-full bg-white text-blue-700 font-semibold text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors disabled:opacity-70"
+          ) : (() => {
+            // 3ème état : essai parrainé Starter Pro actif (30j au lieu de 14).
+            // On compute le statut depuis founder.trialExtraDays — fallback sur
+            // l'offre 14j classique si pas parrainé.
+            const trial = founder
+              ? computeTrialDaysLeft(founder.createdAt, founder.trialExtraDays)
+              : null;
+            const isReferredActive = trial != null && trial.isReferred && trial.daysLeft > 0;
+
+            if (isReferredActive && trial) {
+              return (
+                <div
+                  className="rounded-2xl p-5 text-white relative overflow-hidden"
+                  style={{ background: "linear-gradient(135deg, #059669 0%, #2563EB 100%)" }}
                 >
-                  {checkoutLoading ? (
-                    <><div className="w-4 h-4 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin" /> Ouverture du paiement…</>
-                  ) : "Démarrer l'essai"}
-                </button>
+                  <div aria-hidden className="absolute inset-0 pointer-events-none" style={{ background: "radial-gradient(ellipse at 80% 30%, rgba(255,255,255,0.14) 0%, transparent 60%)" }} />
+                  <div className="relative">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Crown size={14} className="text-white" />
+                      <span className="text-white/90 text-xs font-semibold uppercase tracking-wider">
+                        Starter Pro · Parrainage
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-2 mb-1">
+                      <p className="text-2xl font-bold leading-tight">
+                        {trial.daysLeft} {trial.daysLeft > 1 ? "jours" : "jour"}
+                      </p>
+                      <span className="text-white/80 text-sm">
+                        restant{trial.daysLeft > 1 ? "s" : ""} sur {trial.totalDays}
+                      </span>
+                    </div>
+                    <p className="text-white/90 text-sm mb-1">
+                      Scans illimités, alertes prix temps réel, conciergerie chef.
+                    </p>
+                    <p className="text-white/80 text-xs mb-4">
+                      À la fin de l&apos;essai parrainé : <strong className="text-white">19,99 € HT/mois</strong> · Sans engagement
+                    </p>
+                    <button
+                      onClick={startCheckout}
+                      disabled={checkoutLoading}
+                      className="w-full bg-white text-emerald-700 font-semibold text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 hover:bg-emerald-50 transition-colors disabled:opacity-70"
+                    >
+                      {checkoutLoading ? (
+                        <><div className="w-4 h-4 border-2 border-emerald-200 border-t-emerald-700 rounded-full animate-spin" /> Ouverture du paiement…</>
+                      ) : "Activer mon abonnement maintenant"}
+                    </button>
+                  </div>
+                </div>
+              );
+            }
+
+            // Offre classique 14j — affichée pour les users non-parrainés.
+            return (
+              <div className="rounded-2xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(145deg, #1D4ED8, #2563EB 50%, #4F46E5)" }}>
+                <div className="absolute inset-0" style={{ background: "radial-gradient(ellipse at 80% 30%, rgba(255,255,255,0.14) 0%, transparent 60%)" }} />
+                <div className="relative">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Crown size={14} className="text-blue-200" />
+                    <span className="text-blue-200 text-xs font-semibold uppercase tracking-wider">YIELD Pro</span>
+                  </div>
+                  <p className="text-2xl font-bold mb-1">14 jours offerts</p>
+                  <p className="text-blue-100 text-sm mb-1">
+                    200 scans / mois, alertes prix temps réel, conciergerie chef.
+                  </p>
+                  <p className="text-blue-200 text-xs mb-4">
+                    Puis <strong className="text-white">19,99 € HT/mois</strong> · Sans engagement · Résiliable en 1 clic
+                  </p>
+                  <button
+                    onClick={startCheckout}
+                    disabled={checkoutLoading}
+                    className="w-full bg-white text-blue-700 font-semibold text-sm py-2.5 rounded-xl flex items-center justify-center gap-2 hover:bg-blue-50 transition-colors disabled:opacity-70"
+                  >
+                    {checkoutLoading ? (
+                      <><div className="w-4 h-4 border-2 border-blue-200 border-t-blue-700 rounded-full animate-spin" /> Ouverture du paiement…</>
+                    ) : "Démarrer l'essai"}
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </section>
 
         {/* Sécurité */}

@@ -10,6 +10,10 @@ export type FounderInfo = {
   referralCode: string | null;
   referredByCode: string | null;
   createdAt: string | null;
+  /** Jours d'essai bonus accumulés via parrainage (RPC apply_referral_code).
+   *  > 0 = l'user est en "essai parrainé Starter Pro" : on doit masquer
+   *  l'offre 14j et afficher son statut spécial. */
+  trialExtraDays: number;
 };
 
 /** Lit les infos fondateur du user courant. NULL partout si compte pré-migration
@@ -19,7 +23,7 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("founder_number, founder_letter_seen_at, referral_code, referred_by_code, created_at")
+    .select("founder_number, founder_letter_seen_at, referral_code, referred_by_code, created_at, trial_extra_days")
     .eq("id", session.user.id)
     .maybeSingle();
   if (error || !data) return null;
@@ -29,6 +33,7 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
     referral_code: string | null;
     referred_by_code: string | null;
     created_at: string | null;
+    trial_extra_days: number | null;
   };
   return {
     founderNumber: row.founder_number,
@@ -36,7 +41,28 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
     referralCode: row.referral_code,
     referredByCode: row.referred_by_code,
     createdAt: row.created_at,
+    trialExtraDays: Math.max(0, Number(row.trial_extra_days) || 0),
   };
+}
+
+/** Constante miroir de TRIAL_DAYS dans /api/invoices/process.
+ *  Doit rester en sync — utilisée pour calculer les jours restants côté UI. */
+export const TRIAL_DAYS_DEFAULT = 14;
+
+/** Calcule les jours d'essai restants pour un user non-abonné.
+ *  Formule alignée avec le trial gate côté API :
+ *  effectiveTrialDays = MAX(14, trial_extra_days). Retourne 0 si trial expiré. */
+export function computeTrialDaysLeft(createdAt: string | null, trialExtraDays: number): {
+  totalDays: number;
+  daysLeft: number;
+  isReferred: boolean;
+} {
+  const total = Math.max(TRIAL_DAYS_DEFAULT, trialExtraDays);
+  const isReferred = trialExtraDays > 0;
+  if (!createdAt) return { totalDays: total, daysLeft: total, isReferred };
+  const elapsed = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const left = Math.max(0, Math.ceil(total - elapsed));
+  return { totalDays: total, daysLeft: left, isReferred };
 }
 
 /** Marque la lettre du fondateur comme vue. Idempotent — peut être appelé
