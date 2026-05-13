@@ -14,9 +14,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertCircle, ArrowLeft, Check, ChefHat, History, Pencil, RotateCcw,
+  AlertCircle, ArrowLeft, Check, History, Pencil, RotateCcw,
   Save, Sliders, Trash2, TrendingDown, TrendingUp, X,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { supabase } from "@/lib/supabase-browser";
 import { PageSpinner } from "@/app/dashboard/_components/PageSpinner";
 import {
@@ -236,7 +237,7 @@ export default function RecipeDetailPage({ params }: { params: Promise<{ id: str
           </Link>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center flex-shrink-0">
-              <ChefHat size={16} className="text-white" />
+              <YieldLogo size={16} className="text-white" />
             </div>
             <p className="font-bold text-slate-900 text-sm truncate">{recipe.name}</p>
           </div>
@@ -583,7 +584,7 @@ function IngredientLine({
                 className="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1"
                 title="Cet ingrédient est utilisé dans d'autres recettes — toute variation de prix se propage."
               >
-                <ChefHat size={9} />
+                <YieldLogo size={9} />
                 {otherRecipesCount === 1
                   ? "1 autre recette"
                   : `${otherRecipesCount} autres recettes`}

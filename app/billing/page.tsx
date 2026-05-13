@@ -9,8 +9,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowLeft, CheckCircle2, ChefHat, ChevronRight, Crown, Settings, ShieldCheck,
+  ArrowLeft, CheckCircle2, ChevronRight, Crown, Settings, ShieldCheck,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { supabase } from "@/lib/supabase-browser";
 
 export default function BillingPage() {
@@ -100,7 +101,7 @@ export default function BillingPage() {
 
         <div className="bg-white rounded-2xl border border-slate-100 p-8 shadow-sm">
           <div className="flex items-center gap-2 mb-6">
-            <ChefHat size={20} className="text-blue-600" />
+            <YieldLogo size={20} className="text-blue-600" />
             <span className="font-black text-base gradient-text">YIELD</span>
           </div>
 

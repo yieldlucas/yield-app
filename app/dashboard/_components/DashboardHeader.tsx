@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Calculator, ChefHat, Download, HelpCircle, MoreHorizontal, Salad, Settings,
+  Calculator, Download, HelpCircle, MoreHorizontal, Salad, Settings,
   User,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { AnimatePresence, motion } from "framer-motion";
 import { NotificationsBell } from "./NotificationsBell";
 import { type Alert } from "./types";
@@ -52,7 +53,7 @@ export function DashboardHeader({
       <div className="max-w-lg mx-auto px-5 py-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 flex-shrink-0">
           <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
-            <ChefHat size={16} className="text-white" />
+            <YieldLogo size={16} className="text-white" />
           </div>
           <span className="font-black text-base tracking-tight gradient-text">YIELD</span>
         </div>

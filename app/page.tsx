@@ -4,12 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import {
   Camera, Zap, Bell, ShieldCheck, TrendingDown,
-  ChefHat, Lock, Server, ArrowRight, ArrowLeft,
+  Lock, Server, ArrowRight, ArrowLeft,
   CheckCircle2, Menu, X, Scale, Timer, MessageCircle, KeyRound,
   Salad, Sliders,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { PhoneShowcase } from "./components/PhoneShowcase";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { supabase } from "@/lib/supabase-browser";
 
 // ─── Shader background ───────────────────────────────────
@@ -69,7 +70,7 @@ function Nav({ onCTA }: { onCTA: () => void }) {
       <div className="max-w-6xl mx-auto px-5 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center">
-            <ChefHat size={17} className="text-white" />
+            <YieldLogo size={17} className="text-white" />
           </div>
           <span className="font-black text-lg tracking-tight gradient-text">YIELD</span>
         </div>
@@ -249,7 +250,7 @@ function HowItWorksSection() {
       mockup: <AlertMockup />,
     },
     {
-      number: "04", Icon: ChefHat,
+      number: "04", Icon: YieldLogo,
       title: "Pilotez vos marges plat par plat",
       subtitle: "Le module Mes Recettes en accès libre",
       description: "Composez vos plats dans la calculatrice, liez chaque ingrédient à votre catalogue. À chaque scan, le coût matière est recalculé. Vous voyez en un coup d'œil quels plats glissent sous votre seuil de marge.",
@@ -697,7 +698,7 @@ function StorySection() {
             <div className="flex -space-x-3">
               {["#2563EB", "#4F46E5", "#0EA5E9"].map((color, i) => (
                 <div key={i} className="w-10 h-10 rounded-full border-2 border-white flex items-center justify-center" style={{ background: `${color}18`, borderColor: color }}>
-                  <ChefHat size={15} style={{ color }} />
+                  <YieldLogo size={15} toqueColor={color} />
                 </div>
               ))}
             </div>
@@ -832,7 +833,7 @@ function ConciergeButton() {
           >
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 btn-primary rounded-xl flex items-center justify-center">
-                <ChefHat size={15} className="text-white" />
+                <YieldLogo size={15} className="text-white" />
               </div>
               <div>
                 <p className="text-slate-900 text-sm font-semibold">Conciergerie Chef</p>
@@ -1201,7 +1202,7 @@ function CTASection({ show, onClose }: { show: boolean; onClose: () => void }) {
                     >
                       <div className="text-center mb-7">
                         <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
-                          <ChefHat size={26} className="text-white" />
+                          <YieldLogo size={26} toqueColor="white" accentColor="#2563EB" />
                         </div>
                         <h3 className="text-2xl font-bold text-slate-900 mb-2">Démarrer le service</h3>
                         <p className="text-slate-500 text-sm">
@@ -1376,7 +1377,7 @@ function Footer() {
     <footer className="border-t border-slate-100 py-10 px-5 bg-white/50">
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-slate-400">
         <div className="flex items-center gap-2">
-          <ChefHat size={15} className="text-blue-600" />
+          <YieldLogo size={15} className="text-blue-600" />
           <span className="font-black gradient-text">YIELD</span>
           <span className="text-slate-200">·</span>
           <span>Par des chefs, pour des chefs</span>
@@ -1441,7 +1442,7 @@ export default function LandingPage() {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#F7F9FF" }}>
         <div className="w-10 h-10 rounded-2xl btn-primary flex items-center justify-center animate-pulse">
-          <ChefHat size={18} className="text-white" />
+          <YieldLogo size={18} className="text-white" />
         </div>
       </div>
     );

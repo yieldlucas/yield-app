@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Bell, Calculator, Camera, ChefHat, ChevronRight, Sparkles } from "lucide-react";
+import { Bell, Calculator, Camera, ChevronRight, Sparkles } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 const STEPS = [
   { n: "01", Icon: Camera, title: "Photographiez", desc: "Le bon de livraison, à réception, en 5 secondes." },
@@ -82,7 +83,7 @@ export function OnboardingModal({
             className="card rounded-3xl p-8 max-w-sm w-full shadow-card"
           >
             <div className="w-14 h-14 btn-primary rounded-2xl flex items-center justify-center mx-auto mb-5 glow-blue-sm">
-              <ChefHat size={26} className="text-white" />
+              <YieldLogo size={26} toqueColor="white" accentColor="#2563EB" />
             </div>
 
             {step === 1 ? (

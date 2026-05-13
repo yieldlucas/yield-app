@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChefHat } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 // ⚠️  PLACEHOLDERS LÉGAUX À REMPLIR AVANT PROD
 // ───────────────────────────────────────────
@@ -21,7 +21,7 @@ export default function TermsPage() {
     <main className="min-h-screen bg-slate-50 py-12 px-5">
       <div className="max-w-3xl mx-auto bg-white rounded-2xl border border-slate-100 p-8 sm:p-12 shadow-sm">
         <Link href="/" className="flex items-center gap-2 mb-8 text-slate-600 hover:text-blue-600 transition-colors">
-          <ChefHat size={18} className="text-blue-600" />
+          <YieldLogo size={18} className="text-blue-600" />
           <span className="font-black gradient-text">YIELD</span>
         </Link>
 

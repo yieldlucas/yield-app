@@ -7,8 +7,9 @@
 
 import Link from "next/link";
 import {
-  ArrowLeft, Bell, Camera, ChefHat, LineChart, ScanLine, Salad, Sparkles,
+  ArrowLeft, Bell, Camera, LineChart, ScanLine, Salad, Sparkles,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 export const metadata = {
   title: "Comment Yield fonctionne",
@@ -31,7 +32,7 @@ const STEPS = [
     label: "La Composition",
     title: "Enregistrer vos plats",
     desc: "Composez vos recettes dans la calculatrice (côte de bœuf + frites + garniture…). Chaque ingrédient est lié au dernier prix d'achat scanné.",
-    Icon: ChefHat,
+    Icon: YieldLogo,
     accent: "bg-emerald-50 text-emerald-700 border-emerald-100",
     badge: "bg-emerald-600",
   },

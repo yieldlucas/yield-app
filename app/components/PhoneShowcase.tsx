@@ -11,9 +11,10 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Battery, Camera, ChefHat, ChevronLeft, ChevronRight, Salad, ScanLine, Signal,
+  Battery, Camera, ChevronLeft, ChevronRight, Salad, ScanLine, Signal,
   Sparkles, TrendingDown, TrendingUp, Wifi,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 const SCENES = ["dashboard", "tap", "camera", "processing", "recipes"] as const;
 type Scene = typeof SCENES[number];
@@ -348,7 +349,7 @@ function SceneDashboard() {
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-1.5">
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <ChefHat size={10} className="text-white" />
+            <YieldLogo size={10} className="text-white" />
           </div>
           <span className="text-[10px] font-black tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">YIELD</span>
         </div>
@@ -398,7 +399,7 @@ function SceneDashboard() {
           <p className="text-[10px] font-bold leading-tight relative">Scanner une facture</p>
         </div>
         <div className="rounded-xl bg-white border border-emerald-100 p-2 shadow-sm">
-          <ChefHat size={12} className="mb-1 text-emerald-700" />
+          <YieldLogo size={12} className="mb-1 text-emerald-700" />
           <p className="text-[7px] font-bold text-emerald-700 tracking-wider">LE PILOTE</p>
           <p className="text-[10px] font-bold text-slate-900 leading-tight">Mes recettes</p>
         </div>
@@ -457,7 +458,7 @@ function SceneTap() {
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-1.5">
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <ChefHat size={10} className="text-white" />
+            <YieldLogo size={10} className="text-white" />
           </div>
           <span className="text-[10px] font-black tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">YIELD</span>
         </div>
@@ -513,7 +514,7 @@ function SceneTap() {
           />
         </motion.div>
         <div className="rounded-xl bg-white border border-emerald-100 p-2 shadow-sm opacity-50">
-          <ChefHat size={12} className="mb-1 text-emerald-700" />
+          <YieldLogo size={12} className="mb-1 text-emerald-700" />
           <p className="text-[7px] font-bold text-emerald-700 tracking-wider">LE PILOTE</p>
           <p className="text-[10px] font-bold text-slate-900 leading-tight">Mes recettes</p>
         </div>
@@ -634,7 +635,7 @@ function SceneProcessing() {
       <div className="flex items-center justify-between pt-1">
         <div className="flex items-center gap-1.5">
           <div className="w-5 h-5 rounded-md bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-            <ChefHat size={10} className="text-white" />
+            <YieldLogo size={10} className="text-white" />
           </div>
           <span className="text-[10px] font-black tracking-tight bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">YIELD</span>
         </div>

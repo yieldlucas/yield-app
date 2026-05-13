@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertTriangle, Camera, CheckCircle2, ChefHat } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { type BatchItem } from "./types";
 
 /**
@@ -65,7 +66,7 @@ export function BatchOverlay({
             <div className="flex items-center gap-3 mb-5">
               <div className="relative w-12 h-12 flex-shrink-0">
                 <div className="absolute inset-0 rounded-2xl btn-primary flex items-center justify-center">
-                  <ChefHat size={22} className="text-white" />
+                  <YieldLogo size={22} className="text-white" />
                 </div>
                 {!allFinished && (
                   <svg className="absolute inset-0 animate-spin-slow" viewBox="0 0 48 48" fill="none">

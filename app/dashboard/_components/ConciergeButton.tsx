@@ -4,7 +4,6 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronDown,
-  ChefHat,
   Database,
   Headphones,
   HelpCircle,
@@ -12,6 +11,7 @@ import {
   MessageCircle,
   X,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 const FAQ_ITEMS: { q: string; Icon: typeof Database; a: string }[] = [
   {
@@ -79,7 +79,7 @@ export function ConciergeButton() {
               <div className="sticky top-0 bg-white/90 backdrop-blur-md px-5 py-4 border-b border-slate-100 flex items-center justify-between rounded-t-3xl">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 btn-primary rounded-xl flex items-center justify-center">
-                    <ChefHat size={18} className="text-white" />
+                    <YieldLogo size={18} className="text-white" />
                   </div>
                   <div>
                     <p className="text-slate-900 font-bold text-sm">Aide & Conciergerie</p>

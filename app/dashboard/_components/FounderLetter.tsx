@@ -9,7 +9,8 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChefHat, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 export function FounderLetter({
   show,
@@ -56,7 +57,7 @@ export function FounderLetter({
               <div aria-hidden className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-white/15 blur-2xl pointer-events-none" />
               <div className="relative flex items-center gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <ChefHat size={22} />
+                  <YieldLogo size={22} />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-white/70">

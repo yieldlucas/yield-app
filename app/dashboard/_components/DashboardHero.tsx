@@ -12,7 +12,8 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Camera, ChefHat, ChevronRight, Salad, ScanLine } from "lucide-react";
+import { Camera, ChevronRight, Salad, ScanLine } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 export function DashboardHero({
   onScan,
@@ -79,7 +80,7 @@ export function DashboardHero({
         <div className="relative">
           <div className="flex items-center gap-2 mb-2">
             <div className="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">
-              <ChefHat size={18} className="text-emerald-700" />
+              <YieldLogo size={18} className="text-emerald-700" />
             </div>
             <span className="text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
               Le Pilote

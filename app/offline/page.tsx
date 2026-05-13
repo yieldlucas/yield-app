@@ -1,4 +1,4 @@
-import { ChefHat } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 
 export default function OfflinePage() {
   return (
@@ -9,7 +9,7 @@ export default function OfflinePage() {
       <div className="text-center max-w-sm">
         <div className="relative w-20 h-20 mx-auto mb-8">
           <div className="w-20 h-20 rounded-2xl btn-primary flex items-center justify-center">
-            <ChefHat size={32} className="text-white" />
+            <YieldLogo size={32} toqueColor="white" accentColor="#2563EB" />
           </div>
           <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-red-500 rounded-full border-2 border-white flex items-center justify-center">
             <span className="text-white text-xs font-bold">!</span>

@@ -12,9 +12,10 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  AlertCircle, ArrowLeft, ChefHat, ChevronRight,
+  AlertCircle, ArrowLeft, ChevronRight,
   Salad, Search, Sparkles, TrendingDown, TrendingUp,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { supabase } from "@/lib/supabase-browser";
 import {
   fetchRecipes,
@@ -73,7 +74,7 @@ export default function RecipesPage() {
           </Link>
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <div className="w-8 h-8 rounded-xl btn-primary flex items-center justify-center flex-shrink-0">
-              <ChefHat size={16} className="text-white" />
+              <YieldLogo size={16} className="text-white" />
             </div>
             <div className="min-w-0">
               <p className="font-bold text-slate-900 text-sm leading-tight truncate">Mes recettes</p>

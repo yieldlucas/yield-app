@@ -3,10 +3,11 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
-  ChefHat, ArrowLeft, Mail, Building2, Crown, ShieldCheck,
+  ArrowLeft, Mail, Building2, Crown, ShieldCheck,
   CreditCard, AlertTriangle, CheckCircle2, Copy, Gift, LogOut, Salad,
   Share2, Sparkles, Star, XCircle,
 } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
@@ -286,7 +287,7 @@ export default function ProfilePage() {
         {/* Avatar + nom */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card rounded-3xl p-6 flex items-center gap-4">
           <div className="w-16 h-16 btn-primary rounded-2xl flex items-center justify-center flex-shrink-0">
-            <ChefHat size={28} className="text-white" />
+            <YieldLogo size={28} toqueColor="white" accentColor="#2563EB" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-slate-900 font-bold text-lg truncate">

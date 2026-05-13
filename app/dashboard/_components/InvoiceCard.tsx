@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { ChefHat, X } from "lucide-react";
+import { X } from "lucide-react";
+import { YieldLogo } from "@/app/_components/YieldLogo";
 import { type RecentInvoice, VARIATION_ALERT_PCT } from "./types";
 
 /**
@@ -171,7 +172,7 @@ export function InvoiceCard({
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors cursor-pointer select-none"
             title="Composer une recette à partir de ces lignes"
           >
-            <ChefHat size={11} />
+            <YieldLogo size={11} />
             Créer une recette
           </span>
         </div>
