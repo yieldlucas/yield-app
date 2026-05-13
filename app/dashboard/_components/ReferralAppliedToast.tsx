@@ -66,12 +66,12 @@ export function ReferralAppliedToast({
                 </h3>
                 <p className="text-white/95 text-sm text-center leading-relaxed mb-5">
                   Vous avez été parrainé : <strong>{daysCredited} jours d&apos;essai
-                  supplémentaires</strong> ont été ajoutés à votre compte.
+                  Starter Pro gratuits</strong> activés (au lieu de 14).
                 </p>
                 <div className="rounded-xl bg-white/15 backdrop-blur-sm border border-white/10 px-3 py-2.5 text-center">
                   <p className="text-white/95 text-[12px] leading-relaxed">
-                    Aucune carte bancaire requise. Profitez tranquillement de
-                    votre essai prolongé pour découvrir Yield.
+                    Aucune carte bancaire requise. À la fin des 30 jours,
+                    abonnez-vous pour continuer à scanner.
                   </p>
                 </div>
 

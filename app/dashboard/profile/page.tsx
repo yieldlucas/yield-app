@@ -444,7 +444,7 @@ export default function ProfilePage() {
                       Vous avez un code parrain ?
                     </p>
                     <p className="text-slate-500 text-[12px] leading-snug mt-0.5">
-                      Saisissez-le pour recevoir <strong>30 jours d&apos;essai supplémentaires</strong>.
+                      Saisissez-le pour activer <strong>30 jours d&apos;essai Starter Pro gratuits</strong> (au lieu de 14).
                     </p>
                   </div>
                 </div>
@@ -485,7 +485,7 @@ export default function ProfilePage() {
             {applySuccess && (
               <div className="card rounded-2xl p-4 mb-3 border border-emerald-200 bg-emerald-50">
                 <p className="text-emerald-800 text-sm font-semibold flex items-center gap-2">
-                  <CheckCircle2 size={16} /> Bonus activé : 30 jours d&apos;essai supplémentaires ajoutés à votre compte.
+                  <CheckCircle2 size={16} /> Bonus activé : 30 jours d&apos;essai Starter Pro gratuits (au lieu de 14).
                 </p>
               </div>
             )}
@@ -496,7 +496,7 @@ export default function ProfilePage() {
                 <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
                 <p className="text-slate-700 text-sm">
                   Vous avez été parrainé par <strong className="font-mono text-slate-900">{founder.referredByCode}</strong>.
-                  Bonus de 30 jours actif.
+                  30 jours d&apos;essai Starter Pro gratuits actifs.
                 </p>
               </div>
             )}

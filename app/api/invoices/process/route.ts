@@ -77,10 +77,14 @@ export async function POST(request: NextRequest) {
     } | null;
     const isSubscribed = Boolean(profile?.is_subscribed);
     const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
-    // trial_extra_days est crédité +30 par filleul accepté (migration 017).
-    // S'additionne aux 14 jours de base. Cumulable (parrainages multiples).
+    // trial_extra_days = bonus parrainage (+30 par filleul accepté). Logique
+    // métier : le bonus REMPLACE les 14j de base au lieu de s'y additionner
+    // (un filleul a 30j de Starter Pro, pas 14+30=44). Pour les parrains qui
+    // accumulent +30 plusieurs fois, le MAX prend le dessus (90j > 14j).
+    // Si trialExtraDays = 0 → fallback 14j default.
     const trialExtraDays = Math.max(0, Number(profile?.trial_extra_days) || 0);
-    const trialMs = (TRIAL_DAYS + trialExtraDays) * 24 * 60 * 60 * 1000;
+    const effectiveTrialDays = Math.max(TRIAL_DAYS, trialExtraDays);
+    const trialMs = effectiveTrialDays * 24 * 60 * 60 * 1000;
     let trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
 
     // Anti-fraude trial : un user qui se ré-inscrit avec un alias email

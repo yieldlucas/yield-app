@@ -1459,8 +1459,8 @@ export default function LandingPage() {
           style={{ background: "linear-gradient(90deg, #059669 0%, #2563EB 100%)" }}
         >
           <span className="font-medium">
-            🎁 Vous avez été parrainé — <strong>30 jours d&apos;essai supplémentaires</strong> seront
-            appliqués automatiquement à l&apos;inscription. Aucune carte bancaire requise.
+            🎁 Vous avez été parrainé — <strong>30 jours d&apos;essai gratuits</strong> seront
+            activés à l&apos;inscription (au lieu de 14). Aucune carte bancaire requise.
           </span>
           <button
             onClick={() => setReferralCode(null)}
