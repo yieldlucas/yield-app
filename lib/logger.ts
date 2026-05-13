@@ -24,18 +24,31 @@ const PII_KEYS = new Set([
   "secret",
   "stripe_secret",
   "service_role_key",
+  // Stripe customer/subscription IDs : pas du PII strict mais corrélateurs
+  // directs avec un compte de paiement. Si on les laisse fuir dans les logs
+  // d'un tier (Vercel, Sentry, Logflare), un attaquant qui scrape les logs
+  // peut potentiellement les croiser pour désanonymiser un client.
+  "stripe_customer_id",
+  "customerid",
+  "customer_id",
+  "subscriptionid",
+  "subscription_id",
 ]);
 
 const EMAIL_RE = /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g;
 const JWT_RE = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 // Tronque les UUID au préfixe (assez pour corréler en debug, pas assez pour ré-identifier).
 const UUID_RE = /\b[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\b/gi;
+// Stripe IDs (cus_xxx, sub_xxx, in_xxx, ch_xxx, etc.) — tronqués au préfixe
+// pour garder la corrélation cross-services en debug sans exposer l'ID complet.
+const STRIPE_ID_RE = /\b(cus|sub|in|pi|ch|seti|src|cs|prod|price)_[A-Za-z0-9]{8,}\b/g;
 
 function scrubString(s: string): string {
   return s
     .replace(EMAIL_RE, "[email]")
     .replace(JWT_RE, "[jwt]")
-    .replace(UUID_RE, (m) => `${m.slice(0, 8)}…`);
+    .replace(UUID_RE, (m) => `${m.slice(0, 8)}…`)
+    .replace(STRIPE_ID_RE, (m) => `${m.slice(0, m.indexOf("_") + 5)}…`);
 }
 
 function scrubValue(v: unknown, depth = 0): unknown {
