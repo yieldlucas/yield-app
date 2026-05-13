@@ -27,6 +27,7 @@ import { DashboardHero } from "./_components/DashboardHero";
 import { ScanReminderBanner } from "./_components/ScanReminderBanner";
 import { FirstScanCelebration } from "./_components/FirstScanCelebration";
 import { FounderLetter } from "./_components/FounderLetter";
+import { ReferralAppliedToast } from "./_components/ReferralAppliedToast";
 import { fetchFounderInfo, markFounderLetterSeen, applyReferralCode, type FounderInfo } from "./_lib/founder-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
@@ -92,6 +93,10 @@ export default function DashboardPage() {
   // Null tant que pas chargé. Si la migration 016 n'est pas appliquée,
   // les champs internes seront null mais le state existe.
   const [founderInfo, setFounderInfo] = useState<FounderInfo | null>(null);
+  // Toast de confirmation quand la RPC applique le bonus parrainage à
+  // l'arrivée sur le dashboard. Valeur = nombre de jours crédités (30).
+  // Null = pas d'application en cours, ne montre pas le toast.
+  const [referralJustApplied, setReferralJustApplied] = useState<number | null>(null);
   // Permet de masquer le banner après dismiss (la persistance 3 jours est
   // gérée en localStorage côté ScanReminderBanner).
   const [reminderDismissed, setReminderDismissed] = useState(false);
@@ -406,18 +411,28 @@ export default function DashboardPage() {
       void reloadFounderInfo();
 
       // Application du code parrain si présent dans localStorage (set par la
-      // home quand l'URL contient ?ref=CODE). Idempotent : applyReferralCode
-      // ne touche pas un profile qui a déjà un referred_by_code. On clear le
-      // localStorage après pour ne pas réessayer en boucle.
+      // home quand l'URL contient ?ref=CODE). La RPC apply_referral_code est
+      // idempotente + atomique côté Postgres : on peut la déclencher sans
+      // crainte. On clear le localStorage dès qu'on a une réponse (ok ou error
+      // définitive) pour ne pas re-tenter en boucle.
       if (typeof window !== "undefined") {
         const pendingRef = localStorage.getItem("yield_pending_referral_code");
         if (pendingRef) {
-          void applyReferralCode(pendingRef).then((ok) => {
-            if (ok) {
+          void applyReferralCode(pendingRef).then((res) => {
+            // Codes d'erreur "définitifs" (invalid_code, self_referral,
+            // duplicate_account) → on clear, ça ne sera jamais valide.
+            // "unknown" / "not_authenticated" → on retry au prochain mount.
+            const isFinal =
+              res.ok ||
+              res.error === "invalid_code" ||
+              res.error === "self_referral" ||
+              res.error === "duplicate_account";
+            if (isFinal) {
               localStorage.removeItem("yield_pending_referral_code");
-              // Re-fetch les infos fondateur pour montrer le code appliqué
-              // (et permettre au profil de compter ce nouvel filleul pour
-              // le parrain).
+            }
+            if (res.ok && !res.alreadyApplied && res.daysCredited) {
+              setReferralJustApplied(res.daysCredited);
+              // Re-fetch pour rafraîchir le badge fondateur + count filleuls
               void reloadFounderInfo();
             }
           });
@@ -698,6 +713,12 @@ export default function DashboardPage() {
         show={founderInfo != null && founderInfo.founderLetterSeenAt == null}
         founderNumber={founderInfo?.founderNumber ?? null}
         onClose={dismissFounderLetter}
+      />
+      {/* Toast bonus parrainage — apparaît immédiatement après l'application
+          réussie de la RPC, par-dessus la lettre Lucas si concurrent. */}
+      <ReferralAppliedToast
+        daysCredited={referralJustApplied}
+        onDismiss={() => setReferralJustApplied(null)}
       />
     </div>
   );

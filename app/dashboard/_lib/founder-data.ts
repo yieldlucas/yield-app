@@ -63,39 +63,47 @@ export async function fetchReferralCount(referralCode: string): Promise<number> 
   return count ?? 0;
 }
 
-/** Applique le code parrain au profile (appelé au moment de l'onboarding,
- *  une fois que le user a saisi le nom de son restaurant et qu'on a un id
- *  stable). Idempotent — ne ré-écrit pas si déjà un code stocké. */
-export async function applyReferralCode(code: string): Promise<boolean> {
+export type ApplyReferralResult =
+  | { ok: true; daysCredited: number; alreadyApplied?: false }
+  | { ok: true; alreadyApplied: true; daysCredited?: undefined }
+  | { ok: false; error: "invalid_code" | "self_referral" | "duplicate_account" | "not_authenticated" | "unknown" };
+
+/** Applique un code parrain via la RPC sécurisée (migration 017).
+ *
+ *  Toute la logique critique vit dans Postgres avec security definer :
+ *  validation, anti-fraude (normalized_email), anti-auto-parrainage, race
+ *  condition guard. Le client ne fait que déclencher et afficher le résultat.
+ *
+ *  Renvoie un objet structuré : succès avec days_credited, ou erreur typée. */
+export async function applyReferralCode(code: string): Promise<ApplyReferralResult> {
   const trimmed = code.trim().toUpperCase();
-  if (!trimmed) return false;
+  if (!trimmed) return { ok: false, error: "invalid_code" };
   const { data: { session } } = await supabase.auth.getSession();
-  if (!session) return false;
+  if (!session) return { ok: false, error: "not_authenticated" };
 
-  // Vérifier d'abord que le code existe (sinon on stocke un code orphelin)
-  // et qu'il n'est pas le code de l'user lui-même.
-  const { data: ownProfile } = await supabase
-    .from("profiles")
-    .select("referral_code, referred_by_code")
-    .eq("id", session.user.id)
-    .maybeSingle();
-  const own = ownProfile as { referral_code: string | null; referred_by_code: string | null } | null;
-  if (!own) return false;
-  if (own.referred_by_code) return true; // Déjà appliqué, ne touche pas
-  if (own.referral_code === trimmed) return false; // Auto-parrainage interdit
-
-  const { data: refExists } = await supabase
-    .from("profiles")
-    .select("id")
-    .eq("referral_code", trimmed)
-    .maybeSingle();
-  if (!refExists) return false;
-
-  const { error } = await supabase
-    .from("profiles")
-    .update({ referred_by_code: trimmed })
-    .eq("id", session.user.id);
-  return !error;
+  const { data, error } = await supabase.rpc("apply_referral_code", { p_code: trimmed });
+  if (error) {
+    return { ok: false, error: "unknown" };
+  }
+  const result = data as {
+    ok?: boolean;
+    error?: string;
+    days_credited?: number;
+    already_applied?: boolean;
+  } | null;
+  if (!result) return { ok: false, error: "unknown" };
+  if (result.ok === false) {
+    const validErrors = ["invalid_code", "self_referral", "duplicate_account", "not_authenticated"] as const;
+    type ErrCode = (typeof validErrors)[number];
+    const errCode = result.error && (validErrors as readonly string[]).includes(result.error)
+      ? (result.error as ErrCode)
+      : "unknown";
+    return { ok: false, error: errCode };
+  }
+  if (result.already_applied) {
+    return { ok: true, alreadyApplied: true };
+  }
+  return { ok: true, daysCredited: result.days_credited ?? 0 };
 }
 
 /** Aggrégats pour le bloc "Votre histoire avec Yield" sur la page profil.

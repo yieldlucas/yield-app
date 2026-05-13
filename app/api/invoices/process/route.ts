@@ -66,14 +66,21 @@ export async function POST(request: NextRequest) {
     // ─── Gate abonnement : essai gratuit 14 jours OU is_subscribed = true ───
     const { data: profileRow } = await supabase
       .from("profiles")
-      .select("is_subscribed, created_at")
+      .select("is_subscribed, created_at, trial_extra_days")
       .eq("id", userId)
       .maybeSingle();
 
-    const profile = profileRow as { is_subscribed?: boolean; created_at?: string } | null;
+    const profile = profileRow as {
+      is_subscribed?: boolean;
+      created_at?: string;
+      trial_extra_days?: number;
+    } | null;
     const isSubscribed = Boolean(profile?.is_subscribed);
     const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
-    const trialMs = TRIAL_DAYS * 24 * 60 * 60 * 1000;
+    // trial_extra_days est crédité +30 par filleul accepté (migration 017).
+    // S'additionne aux 14 jours de base. Cumulable (parrainages multiples).
+    const trialExtraDays = Math.max(0, Number(profile?.trial_extra_days) || 0);
+    const trialMs = (TRIAL_DAYS + trialExtraDays) * 24 * 60 * 60 * 1000;
     let trialActive = createdAt ? Date.now() - createdAt.getTime() < trialMs : false;
 
     // Anti-fraude trial : un user qui se ré-inscrit avec un alias email

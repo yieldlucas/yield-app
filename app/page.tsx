@@ -1417,6 +1417,9 @@ function useAuthRedirect() {
 // ─── Page ─────────────────────────────────────────────────
 export default function LandingPage() {
   const [showCTA, setShowCTA] = useState(false);
+  // Code parrain détecté dans l'URL ?ref=CODE → on affiche un banner top
+  // pour rassurer le user : "Vous avez été parrainé, 30j offerts en plus".
+  const [referralCode, setReferralCode] = useState<string | null>(null);
   const checking = useAuthRedirect();
 
   // Capture du code parrain depuis l'URL (?ref=GERS-MARC) au 1er chargement.
@@ -1428,7 +1431,9 @@ export default function LandingPage() {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (ref) {
-      localStorage.setItem("yield_pending_referral_code", ref.trim().toUpperCase());
+      const code = ref.trim().toUpperCase();
+      localStorage.setItem("yield_pending_referral_code", code);
+      setReferralCode(code);
     }
   }, []);
 
@@ -1445,6 +1450,27 @@ export default function LandingPage() {
   return (
     <>
       <ShaderBackground />
+      {/* Banner parrainage — affiché si ?ref=CODE détecté dans l'URL.
+          Fixe en haut, gradient emerald, dismissable (mais le code reste
+          en localStorage et sera appliqué automatiquement après le signup). */}
+      {referralCode && (
+        <div
+          className="fixed top-0 inset-x-0 z-[55] text-white text-center text-[13px] py-2.5 px-5 shadow-md"
+          style={{ background: "linear-gradient(90deg, #059669 0%, #2563EB 100%)" }}
+        >
+          <span className="font-medium">
+            🎁 Vous avez été parrainé — <strong>30 jours d&apos;essai supplémentaires</strong> seront
+            appliqués automatiquement à l&apos;inscription. Aucune carte bancaire requise.
+          </span>
+          <button
+            onClick={() => setReferralCode(null)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/80 hover:text-white p-1"
+            aria-label="Masquer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
       <Nav onCTA={() => setShowCTA(true)} />
       <main>
         {/* Nouvelle composition resserrée pour un chef pressé entre 2 services :
