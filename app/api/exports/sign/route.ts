@@ -17,7 +17,7 @@ const UUID_RE = /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i;
  *
  * sub :
  *   - invoiceId pour /api/invoices/[id]/export-pdf|csv
- *   - null pour /api/export/csv (global)
+ *   - null pour /api/exports/csv (global)
  */
 export async function POST(req: NextRequest) {
   try {

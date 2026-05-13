@@ -108,13 +108,15 @@ export async function GET(req: NextRequest) {
       }
       try {
         // Stats personnalisées pour le contenu (preuve sociale interne).
-        // 2 SELECTs par user — OK pour <100 trials/jour, à indexer si volume.
+        // 1 query restaurants + 2 counts en parallèle = 3 queries/user (au lieu
+        // de 4 quand getRestaurantIds était appelé 2× dans le Promise.all).
+        const restaurantIds = await getRestaurantIds(sb, p.id);
         const [{ count: scansCount }, { count: alertsCount }] = await Promise.all([
           sb.from("invoices").select("id", { count: "exact", head: true })
             .eq("status", "processed")
-            .in("restaurant_id", await getRestaurantIds(sb, p.id)),
+            .in("restaurant_id", restaurantIds),
           sb.from("margin_alerts").select("id", { count: "exact", head: true })
-            .in("restaurant_id", await getRestaurantIds(sb, p.id)),
+            .in("restaurant_id", restaurantIds),
         ]);
 
         const firstName = p.restaurant_name?.trim() || p.email.split("@")[0] || "chef";

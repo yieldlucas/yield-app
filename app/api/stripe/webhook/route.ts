@@ -240,6 +240,66 @@ export async function POST(req: NextRequest) {
         break;
       }
 
+      case "charge.refunded": {
+        // Garantie satisfait ou remboursé 7j (CGU §6 bis) : quand Lucas
+        // rembourse une charge via le Dashboard Stripe ou via une demande
+        // user-side, on doit (a) couper immédiatement is_subscribed côté
+        // app, ET (b) canceler la subscription Stripe associée pour éviter
+        // une prochaine facturation. Sans ce handler, le user gardait
+        // accès Premium indéfiniment après remboursement.
+        const charge = event.data.object as Stripe.Charge;
+        const customerId = typeof charge.customer === "string"
+          ? charge.customer
+          : charge.customer?.id ?? null;
+
+        if (!customerId) {
+          logger.warn("stripe/webhook", "charge.refunded sans customer", { chargeId: charge.id });
+          break;
+        }
+
+        // 1. Coupe l'accès immédiatement (UX cohérente avec CGU).
+        try {
+          await setSubscriptionByCustomer(customerId, false);
+        } catch (err) {
+          logger.error("stripe/webhook", "charge.refunded: deactivation failed", {
+            customerId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          throw err;
+        }
+
+        // 2. Cancel la subscription chez Stripe pour stopper les futures
+        // factures. On cherche la subscription active du customer ; si
+        // aucune (ex: charge one-shot, déjà cancelée), on no-op.
+        try {
+          const subs = await stripe.subscriptions.list({
+            customer: customerId,
+            status: "active",
+            limit: 1,
+          });
+          const sub = subs.data[0] ?? null;
+          if (sub) {
+            // cancel_at_period_end = false → cancel immédiat. Le user a
+            // remboursé, il n'y a pas de "fin de période" à honorer.
+            await stripe.subscriptions.cancel(sub.id);
+            logger.info("stripe/webhook", "charge.refunded: subscription cancelled", {
+              customerId,
+              subscriptionId: sub.id,
+            });
+          } else {
+            logger.info("stripe/webhook", "charge.refunded: no active subscription to cancel", { customerId });
+          }
+        } catch (err) {
+          // Non-fatal : l'accès a déjà été coupé en (1). On log pour que
+          // Lucas puisse cancel manuellement si besoin.
+          logger.error("stripe/webhook", "charge.refunded: subscription cancel failed", {
+            customerId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        break;
+      }
+
       default:
         // Les autres events sont ignorés mais on ACK quand même pour que Stripe ne retente pas.
         break;

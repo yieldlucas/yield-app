@@ -183,7 +183,7 @@ export default function DashboardPage() {
     setExportLoading(true);
     try {
       // Token HMAC court (5 min, scopé null = export global) via /api/exports/sign.
-      await openSignedExport("/api/export/csv", null);
+      await openSignedExport("/api/exports/csv", null);
     } catch (err) {
       setBillingError(err instanceof Error ? err.message : "Échec de l'export");
     } finally {
