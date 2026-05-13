@@ -13,15 +13,23 @@ export const config = {
   matcher: [
     /**
      * Match toutes les routes SAUF :
-     *  - api/stripe/webhook  → Stripe envoie des requêtes signées sans session
-     *  - _next/static        → assets Next.js compilés
-     *  - _next/image         → images optimisées
-     *  - favicon.ico / icon  → icônes auto-générées
-     *  - apple-icon          → icône iOS
-     *  - manifest.webmanifest → manifeste PWA
-     *  - sw.js               → service worker
-     *  - offline             → page hors-ligne (doit rester accessible sans auth)
+     *  - api/stripe/webhook       → Stripe envoie des requêtes signées sans session
+     *  - api/webhooks/auth/...    → Supabase Database Webhook (signup) — Bearer custom
+     *  - api/cron/...             → Vercel Cron — Bearer CRON_SECRET, pas de session user
+     *  - _next/static             → assets Next.js compilés
+     *  - _next/image              → images optimisées
+     *  - favicon.ico / icon       → icônes auto-générées
+     *  - apple-icon               → icône iOS
+     *  - manifest.webmanifest     → manifeste PWA
+     *  - sw.js                    → service worker
+     *  - offline                  → page hors-ligne (doit rester accessible sans auth)
+     *  - robots.txt / sitemap.xml → SEO (crawlers Google)
+     *
+     * IMPORTANT : ces exclusions sont préemptives. Le middleware est no-op
+     * aujourd'hui, mais si tu y ajoutes une logique d'auth SSR (redirect
+     * non-loggé, refresh JWT, etc.), garde ces patterns OUT — sinon Stripe
+     * se voit retourner du HTML et les crons Vercel se mangent un 401.
      */
-    "/((?!api/stripe/webhook|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|sw.js|offline).*)",
+    "/((?!api/stripe/webhook|api/webhooks|api/cron|_next/static|_next/image|favicon.ico|icon|apple-icon|manifest.webmanifest|sw.js|offline|robots.txt|sitemap.xml).*)",
   ],
 };
