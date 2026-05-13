@@ -32,8 +32,13 @@ import {
   type RecipeIngredientRow,
 } from "../../_lib/recipes-data";
 
-const MARGIN_GREEN = 75;
-const MARGIN_ORANGE = 70;
+// Seuils colorimétriques marge brute, alignés sur la pratique restauration
+// française (food cost cible 30-35%). Doivent rester EN SYNC avec :
+//   - FlashCalculator.tsx (mêmes constantes)
+//   - Vue SQL recipes_with_health (migration 023, seuils 55/65)
+// Voir migration 023 pour l'historique du re-calibrage.
+const MARGIN_GREEN = 65;
+const MARGIN_ORANGE = 55;
 
 export default function RecipeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);

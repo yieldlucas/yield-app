@@ -20,10 +20,20 @@ import { createRecipe, type IngredientInput } from "../_lib/recipes-data";
 // rentable une fois charges + main d'œuvre déduites.
 const COEFFICIENT_PRIX = 3.3;
 
-// Seuils colorimétriques de la jauge marge brute. Conformes au brief produit :
-// rouge sous 70%, orange entre 70 et 75%, vert au-dessus.
-const MARGIN_GREEN = 75;
-const MARGIN_ORANGE = 70;
+// Seuils colorimétriques de la jauge marge brute.
+//
+// Calibrés sur la pratique restauration française : food cost cible 30-35%
+// (= marge brute 65-70%). Avec COEFFICIENT_PRIX = 3.3, le générateur produit
+// une marge de ~70% → tombe pile en zone verte confortable.
+//
+// Avant migration 023 : seuils 70/75 trop sévères → le prix généré par le
+// calculateur tombait DIRECT en zone rouge (paradoxe UX dénoncé en QA).
+//
+// IMPORTANT : ces 2 constantes doivent rester en sync avec la vue SQL
+// recipes_with_health (migration 023) — toute modif ici doit avoir sa
+// contrepartie en migration.
+const MARGIN_GREEN = 65;
+const MARGIN_ORANGE = 55;
 
 // TVA défaut : restauration sur place = 10% en France métropolitaine.
 const VAT_OPTIONS = [
