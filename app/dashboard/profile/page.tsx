@@ -14,6 +14,7 @@ import { clearStack } from "@/lib/scan-stack";
 import { PageSpinner } from "../_components/PageSpinner";
 import {
   fetchFounderInfo, fetchYourHistory, fetchReferralCount, applyReferralCode,
+  ensureFounderMetadata,
   type FounderInfo, type YourHistory,
 } from "../_lib/founder-data";
 
@@ -75,10 +76,18 @@ export default function ProfilePage() {
 
       // Fetch rétention en parallèle (non-bloquant). Affichés progressivement
       // dans les sections "Membre fondateur" + "Votre histoire" + "Parrainage".
+      // Self-heal : si le user n'a pas de referralCode (webhook signup raté),
+      // on déclenche ensure_founder_metadata + refetch — sans ça les autres
+      // chefs ne pourraient jamais utiliser son code comme parrain.
       void fetchFounderInfo().then(async (f) => {
-        setFounder(f);
-        if (f?.referralCode) {
-          setReferralCount(await fetchReferralCount(f.referralCode));
+        let info = f;
+        if (info && info.referralCode == null) {
+          const healed = await ensureFounderMetadata();
+          if (healed) info = await fetchFounderInfo();
+        }
+        setFounder(info);
+        if (info?.referralCode) {
+          setReferralCount(await fetchReferralCount(info.referralCode));
         }
       });
       void fetchYourHistory().then(setHistory);
@@ -212,10 +221,11 @@ export default function ProfilePage() {
       }
     } else {
       const messages: Record<string, string> = {
-        invalid_code: "Ce code n'existe pas. Vérifiez avec votre parrain.",
+        invalid_code: "Ce code n'existe pas. Vérifiez avec votre parrain qu'il s'est bien connecté au moins une fois.",
         self_referral: "Vous ne pouvez pas utiliser votre propre code.",
         duplicate_account: "Un autre compte avec un email similaire existe déjà. Le bonus ne peut pas être appliqué.",
         already_subscribed: "Vous avez déjà un abonnement actif — le code parrain n'est disponible que pour les nouveaux essais.",
+        rpc_missing: "Le système de parrainage est en cours de mise à jour. Réessayez dans quelques minutes ou contactez Lucas.",
         not_authenticated: "Session expirée. Rechargez la page.",
         unknown: "Une erreur est survenue. Réessayez dans un instant.",
       };

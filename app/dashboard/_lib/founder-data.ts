@@ -51,6 +51,18 @@ export async function markFounderLetterSeen(): Promise<boolean> {
   return !error;
 }
 
+/** Self-heal : déclenche l'assignation founder_number + referral_code pour
+ *  l'user courant s'il n'en a pas encore (cas webhook auth/user-created
+ *  raté ou migration en retard). Idempotent côté Postgres — safe à appeler
+ *  à chaque mount du dashboard si on détecte un état vide.
+ *
+ *  Renvoie true si l'appel a réussi (heal tenté), false sinon. Le caller
+ *  doit refetch fetchFounderInfo() après pour récupérer les nouvelles valeurs. */
+export async function ensureFounderMetadata(): Promise<boolean> {
+  const { error } = await supabase.rpc("ensure_founder_metadata");
+  return !error;
+}
+
 /** Compte le nombre de chefs qui se sont inscrits avec un referral_code donné.
  *  Utilisé dans le profil : "X chefs ont rejoint Yield grâce à toi". */
 export async function fetchReferralCount(referralCode: string): Promise<number> {
@@ -66,7 +78,7 @@ export async function fetchReferralCount(referralCode: string): Promise<number> 
 export type ApplyReferralResult =
   | { ok: true; daysCredited: number; alreadyApplied?: false }
   | { ok: true; alreadyApplied: true; daysCredited?: undefined }
-  | { ok: false; error: "invalid_code" | "self_referral" | "duplicate_account" | "already_subscribed" | "not_authenticated" | "unknown" };
+  | { ok: false; error: "invalid_code" | "self_referral" | "duplicate_account" | "already_subscribed" | "rpc_missing" | "not_authenticated" | "unknown" };
 
 /** Applique un code parrain via la RPC sécurisée (migration 017).
  *
@@ -83,6 +95,13 @@ export async function applyReferralCode(code: string): Promise<ApplyReferralResu
 
   const { data, error } = await supabase.rpc("apply_referral_code", { p_code: trimmed });
   if (error) {
+    // PostgREST code PGRST202 = "function does not exist" → migration 017/018
+    // pas appliquée sur Supabase. Distinct de "unknown" pour un message clair
+    // côté UI (et debug plus rapide pour Lucas).
+    const code = (error as { code?: string }).code;
+    if (code === "PGRST202") {
+      return { ok: false, error: "rpc_missing" };
+    }
     return { ok: false, error: "unknown" };
   }
   const result = data as {
@@ -93,7 +112,7 @@ export async function applyReferralCode(code: string): Promise<ApplyReferralResu
   } | null;
   if (!result) return { ok: false, error: "unknown" };
   if (result.ok === false) {
-    const validErrors = ["invalid_code", "self_referral", "duplicate_account", "already_subscribed", "not_authenticated"] as const;
+    const validErrors = ["invalid_code", "self_referral", "duplicate_account", "already_subscribed", "rpc_missing", "not_authenticated"] as const;
     type ErrCode = (typeof validErrors)[number];
     const errCode = result.error && (validErrors as readonly string[]).includes(result.error)
       ? (result.error as ErrCode)

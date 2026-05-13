@@ -28,7 +28,10 @@ import { ScanReminderBanner } from "./_components/ScanReminderBanner";
 import { FirstScanCelebration } from "./_components/FirstScanCelebration";
 import { FounderLetter } from "./_components/FounderLetter";
 import { ReferralAppliedToast } from "./_components/ReferralAppliedToast";
-import { fetchFounderInfo, markFounderLetterSeen, applyReferralCode, type FounderInfo } from "./_lib/founder-data";
+import {
+  fetchFounderInfo, markFounderLetterSeen, applyReferralCode,
+  ensureFounderMetadata, type FounderInfo,
+} from "./_lib/founder-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
 import { fetchInvoiceLinesForCalc, fetchRecentScansCount } from "./_lib/dashboard-data";
@@ -237,7 +240,22 @@ export default function DashboardPage() {
   const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
   const reloadRecipesStats = async () => setRecipesStats(await fetchRecipesHealth());
   const reloadRecentScans = async () => setRecentScans(await fetchRecentScansCount(7));
-  const reloadFounderInfo = async () => setFounderInfo(await fetchFounderInfo());
+  /** Charge les infos fondateur. Si l'user n'a pas encore de referralCode
+   *  (webhook signup raté pour lui), on déclenche un self-heal via la RPC
+   *  ensure_founder_metadata puis on refetch. Évite que le filleul tape un
+   *  code parrain qui pointe vers un parrain au profile non encore initialisé. */
+  const reloadFounderInfo = async () => {
+    const info = await fetchFounderInfo();
+    if (info && info.referralCode == null) {
+      const healed = await ensureFounderMetadata();
+      if (healed) {
+        const fresh = await fetchFounderInfo();
+        setFounderInfo(fresh);
+        return;
+      }
+    }
+    setFounderInfo(info);
+  };
 
   /** Marque la lettre de Lucas comme lue et ferme le modal. Optimistic update :
    *  on patche le state local immédiatement pour que le modal disparaisse,
