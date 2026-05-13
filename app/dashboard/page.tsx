@@ -28,6 +28,7 @@ import { DashboardHero } from "./_components/DashboardHero";
 import { ScanReminderBanner } from "./_components/ScanReminderBanner";
 import { FirstScanCelebration } from "./_components/FirstScanCelebration";
 import { FounderLetter } from "./_components/FounderLetter";
+import { EasterEggModal } from "./_components/EasterEggModal";
 import { ReferralAppliedToast } from "./_components/ReferralAppliedToast";
 import {
   fetchFounderInfo, markFounderLetterSeen, applyReferralCode,
@@ -55,6 +56,7 @@ const CAMERA_GUIDE_SEEN_KEY = "yield_camera_guide_seen";
 export default function DashboardPage() {
   const router = useRouter();
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -424,6 +426,7 @@ export default function DashboardPage() {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) { router.replace("/"); return; }
       setUserId(session.user.id);
+      setUserEmail(session.user.email ?? null);
       setLoading(false);
       void reloadUsage(); void reloadInvoices(); void reloadAlerts();
       void reloadMonthlyStats(); void reloadRecipesStats(); void reloadRecentScans();
@@ -760,6 +763,10 @@ export default function DashboardPage() {
         founderNumber={founderInfo?.founderNumber ?? null}
         onClose={dismissFounderLetter}
       />
+      {/* Easter egg ciblé — voir EasterEggModal.tsx (cible: 1 email précis,
+          one-shot via localStorage, à retirer en supprimant ces 2 lignes +
+          l'import + le fichier _components/EasterEggModal.tsx). */}
+      <EasterEggModal userEmail={userEmail} />
       {/* Toast bonus parrainage — apparaît immédiatement après l'application
           réussie de la RPC, par-dessus la lettre Lucas si concurrent. */}
       <ReferralAppliedToast
