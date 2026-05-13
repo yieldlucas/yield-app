@@ -26,6 +26,8 @@ import { CardHealthWidget } from "./_components/CardHealthWidget";
 import { DashboardHero } from "./_components/DashboardHero";
 import { ScanReminderBanner } from "./_components/ScanReminderBanner";
 import { FirstScanCelebration } from "./_components/FirstScanCelebration";
+import { FounderLetter } from "./_components/FounderLetter";
+import { fetchFounderInfo, markFounderLetterSeen, applyReferralCode, type FounderInfo } from "./_lib/founder-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
 import { fetchInvoiceLinesForCalc, fetchRecentScansCount } from "./_lib/dashboard-data";
@@ -86,6 +88,10 @@ export default function DashboardPage() {
   // Compte des scans des 7 derniers jours — alimente le ScanReminderBanner.
   // Null = pas encore chargé (le banner ne s'affiche que sur chiffre connu).
   const [recentScans, setRecentScans] = useState<number | null>(null);
+  // Infos "Membre fondateur" : numéro, code parrain, état lettre vue.
+  // Null tant que pas chargé. Si la migration 016 n'est pas appliquée,
+  // les champs internes seront null mais le state existe.
+  const [founderInfo, setFounderInfo] = useState<FounderInfo | null>(null);
   // Permet de masquer le banner après dismiss (la persistance 3 jours est
   // gérée en localStorage côté ScanReminderBanner).
   const [reminderDismissed, setReminderDismissed] = useState(false);
@@ -226,6 +232,18 @@ export default function DashboardPage() {
   const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
   const reloadRecipesStats = async () => setRecipesStats(await fetchRecipesHealth());
   const reloadRecentScans = async () => setRecentScans(await fetchRecentScansCount(7));
+  const reloadFounderInfo = async () => setFounderInfo(await fetchFounderInfo());
+
+  /** Marque la lettre de Lucas comme lue et ferme le modal. Optimistic update :
+   *  on patche le state local immédiatement pour que le modal disparaisse,
+   *  puis on persiste en arrière-plan. Échec persistance = on re-affichera au
+   *  prochain login (acceptable). */
+  const dismissFounderLetter = () => {
+    setFounderInfo((prev) =>
+      prev ? { ...prev, founderLetterSeenAt: new Date().toISOString() } : prev,
+    );
+    void markFounderLetterSeen();
+  };
 
   // Ouvre la calculatrice pré-remplie avec les lignes d'une facture donnée.
   // Trigger raccourci "Créer une recette depuis cette facture".
@@ -385,6 +403,26 @@ export default function DashboardPage() {
       setLoading(false);
       void reloadUsage(); void reloadInvoices(); void reloadAlerts();
       void reloadMonthlyStats(); void reloadRecipesStats(); void reloadRecentScans();
+      void reloadFounderInfo();
+
+      // Application du code parrain si présent dans localStorage (set par la
+      // home quand l'URL contient ?ref=CODE). Idempotent : applyReferralCode
+      // ne touche pas un profile qui a déjà un referred_by_code. On clear le
+      // localStorage après pour ne pas réessayer en boucle.
+      if (typeof window !== "undefined") {
+        const pendingRef = localStorage.getItem("yield_pending_referral_code");
+        if (pendingRef) {
+          void applyReferralCode(pendingRef).then((ok) => {
+            if (ok) {
+              localStorage.removeItem("yield_pending_referral_code");
+              // Re-fetch les infos fondateur pour montrer le code appliqué
+              // (et permettre au profil de compter ce nouvel filleul pour
+              // le parrain).
+              void reloadFounderInfo();
+            }
+          });
+        }
+      }
 
       // Pré-remplit la modal onboarding si le nom est déjà connu (réouverture
       // manuelle après reset de yield_onboarding_seen, ou bug de navigation).
@@ -493,9 +531,22 @@ export default function DashboardPage() {
 
       <div className="max-w-lg mx-auto px-5 pt-6 space-y-8">
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-xl font-bold text-slate-900 mb-0.5">
-            {timeGreeting}, {displayName} 👋
-          </h1>
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <h1 className="text-xl font-bold text-slate-900">
+              {timeGreeting}, {displayName} 👋
+            </h1>
+            {/* Badge "Membre #007" — petite touche d'appartenance quotidienne.
+                Caché si founder_number pas encore assigné (compte pré-migration
+                ou webhook signup en retard). */}
+            {founderInfo?.founderNumber != null && (
+              <span
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-gradient-to-r from-blue-500 to-violet-500 text-white shadow-sm"
+                title="Vous êtes un membre fondateur de Yield."
+              >
+                Membre #{String(founderInfo.founderNumber).padStart(3, "0")}
+              </span>
+            )}
+          </div>
           {/* Sous-titre neutre — les chiffres précis (alertes, factures) sont
               déjà visibles dans MonthlyStatsStrip + cloche + Hero. On évite
               de répéter la même info à 4 endroits. */}
@@ -639,6 +690,14 @@ export default function DashboardPage() {
       <FirstScanCelebration
         show={celebrateFirstScan}
         onDismiss={() => setCelebrateFirstScan(false)}
+      />
+      {/* Lettre Lucas — affichée seulement si jamais vue (founder_letter_seen_at
+          null). founderInfo est null pendant le 1er fetch → modale cachée par
+          défaut, évite le flash si l'user l'a déjà vue. */}
+      <FounderLetter
+        show={founderInfo != null && founderInfo.founderLetterSeenAt == null}
+        founderNumber={founderInfo?.founderNumber ?? null}
+        onClose={dismissFounderLetter}
       />
     </div>
   );

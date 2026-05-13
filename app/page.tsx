@@ -1419,6 +1419,19 @@ export default function LandingPage() {
   const [showCTA, setShowCTA] = useState(false);
   const checking = useAuthRedirect();
 
+  // Capture du code parrain depuis l'URL (?ref=GERS-MARC) au 1er chargement.
+  // Stocké en localStorage : sera appliqué après le signup quand le user a
+  // un id et un profile en BDD. Survit aux navigations Safari (vs cookie HTTPOnly
+  // qui pose problème en Safari ITP).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) {
+      localStorage.setItem("yield_pending_referral_code", ref.trim().toUpperCase());
+    }
+  }, []);
+
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#F7F9FF" }}>

@@ -4,13 +4,18 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   ChefHat, ArrowLeft, Mail, Building2, Crown, ShieldCheck,
-  CreditCard, AlertTriangle, CheckCircle2, LogOut,
+  CreditCard, AlertTriangle, CheckCircle2, Copy, Gift, LogOut, Salad,
+  Sparkles, Star,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase-browser";
 import { clearStack } from "@/lib/scan-stack";
 import { PageSpinner } from "../_components/PageSpinner";
+import {
+  fetchFounderInfo, fetchYourHistory, fetchReferralCount,
+  type FounderInfo, type YourHistory,
+} from "../_lib/founder-data";
 
 type Profile = {
   email: string;
@@ -32,6 +37,11 @@ export default function ProfilePage() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  // Données rétention : membre fondateur, histoire, filleuls.
+  const [founder, setFounder] = useState<FounderInfo | null>(null);
+  const [history, setHistory] = useState<YourHistory | null>(null);
+  const [referralCount, setReferralCount] = useState<number>(0);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -55,6 +65,16 @@ export default function ProfilePage() {
       setProfile(p);
       setRestaurantName(p.restaurant_name ?? "");
       setLoading(false);
+
+      // Fetch rétention en parallèle (non-bloquant). Affichés progressivement
+      // dans les sections "Membre fondateur" + "Votre histoire" + "Parrainage".
+      void fetchFounderInfo().then(async (f) => {
+        setFounder(f);
+        if (f?.referralCode) {
+          setReferralCount(await fetchReferralCount(f.referralCode));
+        }
+      });
+      void fetchYourHistory().then(setHistory);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -243,6 +263,133 @@ export default function ProfilePage() {
           </div>
         </section>
 
+        {/* ─── Membre fondateur — identité d'appartenance ─── */}
+        {founder?.founderNumber != null && (
+          <section>
+            <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">
+              Membre fondateur
+            </h2>
+            <div
+              className="rounded-3xl p-5 text-white relative overflow-hidden"
+              style={{ background: "linear-gradient(135deg, #2563EB 0%, #4F46E5 60%, #7C3AED 100%)" }}
+            >
+              <div aria-hidden className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-white/15 blur-2xl pointer-events-none" />
+              <div className="relative flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+                  <Star size={26} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/70 mb-0.5">
+                    Membre fondateur · Yield
+                  </p>
+                  <p className="font-bold text-2xl leading-tight font-mono">
+                    #{String(founder.founderNumber).padStart(3, "0")}
+                  </p>
+                  {founder.createdAt && (
+                    <p className="text-white/80 text-[12px] mt-0.5">
+                      Inscrit depuis le {new Date(founder.createdAt).toLocaleDateString("fr-FR", {
+                        day: "numeric", month: "long", year: "numeric",
+                      })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ─── Votre histoire avec Yield — l'investissement accumulé ─── */}
+        {history != null && (
+          <section>
+            <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">
+              Votre histoire avec Yield
+            </h2>
+            <div className="card rounded-2xl p-5 grid grid-cols-2 gap-4">
+              <HistoryStat
+                icon={<Sparkles size={14} className="text-blue-600" />}
+                label="BL scannés"
+                value={history.invoicesCount}
+              />
+              <HistoryStat
+                icon={<AlertTriangle size={14} className="text-rose-500" />}
+                label="Alertes détectées"
+                value={history.alertsCount}
+              />
+              <HistoryStat
+                icon={<Salad size={14} className="text-emerald-600" />}
+                label="Recettes suivies"
+                value={history.recipesCount}
+              />
+              <HistoryStat
+                icon={<Building2 size={14} className="text-violet-600" />}
+                label="Produits suivis"
+                value={history.productsTracked}
+              />
+            </div>
+          </section>
+        )}
+
+        {/* ─── Parrainage — code à partager + filleuls ─── */}
+        {founder?.referralCode && (
+          <section>
+            <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">
+              Parrainez un collègue
+            </h2>
+            <div className="card rounded-2xl p-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-100 to-blue-100 flex items-center justify-center flex-shrink-0">
+                  <Gift size={18} className="text-emerald-700" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-slate-900 font-bold text-sm leading-tight">
+                    1 mois offert pour vous et lui
+                  </p>
+                  <p className="text-slate-500 text-[12px] leading-snug mt-0.5">
+                    Quand un chef s&apos;inscrit avec votre code, vous gagnez tous les deux 1 mois gratuit.
+                  </p>
+                </div>
+              </div>
+
+              {/* Code copiable */}
+              <div className="flex items-center gap-2 bg-slate-50 rounded-xl p-2 border border-slate-200">
+                <div className="flex-1 px-2 py-1 font-mono font-bold text-slate-900 tracking-wider text-lg tabular-nums select-all">
+                  {founder.referralCode}
+                </div>
+                <button
+                  onClick={async () => {
+                    if (!founder.referralCode) return;
+                    try {
+                      await navigator.clipboard.writeText(founder.referralCode);
+                      setCodeCopied(true);
+                      setTimeout(() => setCodeCopied(false), 2000);
+                    } catch {
+                      // Clipboard API peut être bloquée sur iOS hors HTTPS, on
+                      // bascule sur un fallback select-all sur le span ci-dessus.
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                >
+                  {codeCopied ? <><CheckCircle2 size={13} /> Copié</> : <><Copy size={13} /> Copier</>}
+                </button>
+              </div>
+
+              {/* Stat filleuls */}
+              <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                <p className="text-slate-500 text-xs">
+                  {referralCount === 0
+                    ? "Aucun filleul pour l'instant."
+                    : `${referralCount} chef${referralCount > 1 ? "s ont" : " a"} rejoint Yield grâce à vous.`}
+                </p>
+                {referralCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    +{referralCount} mois
+                  </span>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Abonnement */}
         <section>
           <h2 className="text-slate-400 text-xs font-semibold uppercase tracking-wider mb-3 px-1">Abonnement</h2>
@@ -383,6 +530,27 @@ export default function ProfilePage() {
 
         <p className="text-center text-slate-300 text-xs pt-4 pb-2">YIELD · v1.0</p>
       </div>
+    </div>
+  );
+}
+
+/** Petite stat carrée pour la grille "Votre histoire avec Yield". */
+function HistoryStat({
+  icon, label, value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-1">
+        {icon}
+        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          {label}
+        </span>
+      </div>
+      <p className="text-2xl font-bold text-slate-900 tabular-nums leading-tight">{value}</p>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { sendWelcomeEmail } from "@/lib/emails";
 import { apiErrorResponse, badRequest, unauthorized } from "@/lib/api-error";
 import { logger } from "@/lib/logger";
 import { captureException } from "@/lib/error-tracking";
+import { getServiceClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,7 +65,32 @@ export async function POST(req: NextRequest) {
     }
 
     const email = payload.record?.email;
+    const userId = payload.record?.id;
     if (!email) throw badRequest("Email manquant dans le payload");
+    if (!userId) throw badRequest("ID utilisateur manquant dans le payload");
+
+    // Assignation founder_number + referral_code via RPC.
+    // La fonction est idempotente : si déjà rempli (cas d'un retry webhook),
+    // elle ne touche pas. On la fait BEFORE le welcome email pour que le
+    // mail puisse en théorie inclure le numéro (pas utilisé pour l'instant
+    // mais utile si on enrichit le template plus tard).
+    try {
+      const sb = getServiceClient();
+      const { error: rpcErr } = await sb.rpc("assign_founder_metadata", {
+        p_user_id: userId,
+      });
+      if (rpcErr) {
+        // Non-bloquant : si la migration 016 n'est pas encore appliquée
+        // (relation does not exist), on log et on continue. Le user pourra
+        // se voir attribuer un numéro plus tard via le backfill.
+        logger.warn("webhooks/auth/user-created", "assign_founder_metadata failed", {
+          code: (rpcErr as { code?: string }).code,
+          message: rpcErr.message,
+        });
+      }
+    } catch (err) {
+      logger.warn("webhooks/auth/user-created", "assign_founder_metadata threw", { err: String(err) });
+    }
 
     // Pas encore de profile.restaurant_name à ce stade (saisi à l'onboarding
     // après le 1er login). On utilise la partie locale de l'email comme

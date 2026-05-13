@@ -22,6 +22,9 @@ import WelcomeEmail, { type WelcomeEmailProps } from "./emails/templates/Welcome
 import TrialReminderEmail, {
   type TrialReminderEmailProps,
 } from "./emails/templates/TrialReminder";
+import MonthlyRecapEmail, {
+  type MonthlyRecapEmailProps,
+} from "./emails/templates/MonthlyRecap";
 
 /** Adresse expéditrice. Doit appartenir au domaine vérifié dans Resend. */
 const FROM = "Yield <chef@yield.restaurant>";
@@ -125,5 +128,26 @@ export async function sendTrialReminderEmail(
     html,
     text,
     scope: "trial-reminder",
+  });
+}
+
+/**
+ * Récap mensuel "Votre mois en Yield". Déclenché par cron le 1er de chaque
+ * mois sur les chefs ayant scanné >= 5 BL le mois précédent (sinon on
+ * envoie un mail vide qui démotive).
+ */
+export async function sendMonthlyRecapEmail(
+  to: string,
+  props: MonthlyRecapEmailProps,
+): Promise<boolean> {
+  const element = <MonthlyRecapEmail {...props} />;
+  const html = await render(element);
+  const text = await render(element, { plainText: true });
+  return sendEmail({
+    to,
+    subject: `Votre mois de ${props.monthName} en Yield — ${props.invoicesCount} BL surveillés`,
+    html,
+    text,
+    scope: "monthly-recap",
   });
 }
