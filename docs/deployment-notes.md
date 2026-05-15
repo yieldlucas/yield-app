@@ -353,3 +353,148 @@ Décomposition :
 - Email admin idempotent : 30-45 min
 - UI starter vs pro (3 fichiers) : 1-2h
 - Tests manuels end-to-end : 30 min
+
+---
+
+## Fix audit R3 — Pages légales (CGU/CGV, Privacy, Mentions légales)
+
+Trois pages légales en place avec des placeholders `[À COMPLÉTER : ...]` à
+remplir une fois l'immatriculation officielle finalisée.
+
+**⚠️ Ces documents ont été rédigés sans avocat. La structure est sérieuse et
+complète pour un SaaS B2B FR, mais ce n'est PAS un avis juridique.**
+Faire relire par un avocat ou un service en ligne (Captain Contrat / LegalPlace,
+budget ~150-300 € HT) **avant le premier paiement encaissé**.
+
+### Pages livrées
+
+- `/legal` (`app/legal/page.tsx`) : mentions légales LCEN (éditeur, hébergeur,
+  directeur de publication, responsable RGPD, propriété intellectuelle)
+- `/terms` (`app/terms/page.tsx`) : CGU + CGV fusionnés (objet, accès,
+  abonnement, rétractation B2B, résiliation, garantie 7j, disponibilité,
+  responsabilité, propriété intellectuelle, force majeure, juridiction)
+- `/privacy` (`app/privacy/page.tsx`) : politique de confidentialité RGPD
+  (responsable traitement, données collectées, finalités, sous-traitants
+  incluant Sentry + Resend, durée conservation, droits utilisateurs,
+  sécurité, cookies, transferts hors UE, mention feature comparaison
+  anonymisée k-anonymisation ≥ 5)
+
+Lien `/legal` ajouté au footer de la landing (`app/page.tsx`).
+
+### Placeholders à remplir (29 occurrences sur 3 fichiers)
+
+Lancer `npm run check:legal` pour la liste exacte avec ligne + preview.
+
+Synthèse par valeur métier (un même placeholder peut apparaître plusieurs fois) :
+
+- Raison sociale exacte
+- Forme juridique (EI / EURL / autre)
+- Capital social (`"Capital de X €"` ou `"Non applicable (EI)"`)
+- SIRET (14 chiffres)
+- SIREN (9 chiffres)
+- Code APE/NAF
+- RCS ville et numéro (`"Non applicable (EI)"` si auto-entrepreneur)
+- TVA intracommunautaire (`"Non assujetti (franchise en base)"` si EI)
+- Adresse postale complète du siège
+- Nom et prénom du représentant légal (= directeur de publication)
+- Nom et prénom du responsable RGPD (peut être identique en EI)
+- Juridiction compétente (tribunaux de la ville du siège)
+- Téléphone de contact (optionnel)
+- Date d'entrée en vigueur (DD/MM/YYYY)
+
+### Procédure de remplissage et de déploiement
+
+1. **Phase pré-SIRET** (actuelle) : laisser les placeholders. Activer le bandeau
+   draft via env var Vercel sur preview + production :
+
+   ```bash
+   NEXT_PUBLIC_LEGAL_DRAFT=true
+   ```
+
+   Le bandeau ambre "⚠️ Document en cours de finalisation" s'affiche en haut
+   des 3 pages.
+
+2. **Création de l'auto-entreprise** : déposer le dossier en ligne, recevoir
+   les notifications SIRET/SIREN/RCS.
+
+3. **Remplir les placeholders** : faire un find/replace global dans le projet,
+   ou éditer chaque fichier manuellement (`app/legal/page.tsx`,
+   `app/terms/page.tsx`, `app/privacy/page.tsx`). Pour la date, format
+   DD/MM/YYYY.
+
+4. **Vérifier** :
+
+   ```bash
+   npm run check:legal
+   ```
+
+   Doit afficher `✓ Aucun placeholder résiduel`. Si placeholders restants, la
+   commande les liste avec fichier:ligne.
+
+5. **Relire par un avocat** (~150-300 € HT). Captain Contrat / LegalPlace
+   proposent des forfaits CGU/CGV/Privacy à prix fixe.
+
+6. **Supprimer `NEXT_PUBLIC_LEGAL_DRAFT`** des env vars Vercel.
+
+7. **Déployer** : le hook prebuild (`scripts/check-legal-placeholders.ts`)
+   vérifie `NODE_ENV=production` ET absence de placeholders. Si placeholder
+   résiduel + production → exit 1, build Vercel échoue avec liste des
+   placeholders concernés.
+
+### Architecture séparation /cgu et /cgv à terme
+
+V1 : CGU et CGV fusionnés dans `/terms` (12 sections). C'est acceptable pour
+un SaaS B2B au lancement et la majorité des concurrents font pareil.
+
+À discuter avec l'avocat lors de la revue juridique :
+
+- Séparation `/cgu` (règles d'usage) et `/cgv` (paiement, abonnement) avec
+  conditions d'acceptation distinctes — utile au lancement du forfait Pro
+  pour clarifier les responsabilités contractuelles différenciées
+- Création d'un `/cookies` dédié si on déploie du tracking analytics (V1
+  utilise uniquement des cookies strictement nécessaires, mention courte
+  dans `/privacy` suffit)
+
+### TODO CRITIQUE — Consentement explicite utilisateur
+
+**À régler avant le premier paiement encaissé** (cf article L221-15 et
+suivants du Code de la consommation, et obligations preuve d'acceptation
+contractuelle).
+
+Aujourd'hui, l'inscription utilise un "browse wrap" implicite ("En continuant,
+vous acceptez nos CGU et notre politique de confidentialité"). Acceptable
+juridiquement en B2B au démarrage, mais une preuve explicite est plus solide.
+
+À implémenter dans un sprint dédié (estimation **1.5-2 heures**) :
+
+1. **Case à cocher obligatoire** dans le formulaire d'inscription
+   (`app/page.tsx` étape email) avant le bouton "Recevoir le code OTP". Texte :
+   "J'accepte les [CGU/CGV](/terms), la [Politique de confidentialité](/privacy)
+   et les [Mentions légales](/legal)."
+2. **Migration** : 2 colonnes sur `profiles` :
+   - `cgv_accepted_at timestamptz` (nullable jusqu'à acceptation)
+   - `cgv_version text` (semver type "1.0.0" — la version des CGV acceptée)
+3. **Stockage au signup** : enregistrer `cgv_accepted_at = now()` et
+   `cgv_version = "1.0.0"` au moment du `verifyOtp` réussi
+4. **Check serveur** lors du checkout Stripe (`/api/checkout`) : refuser
+   `payment_method_collection` si `cgv_accepted_at IS NULL` (cas migration
+   pour les comptes pré-feature)
+
+**Bonus à prévoir : re-consentement** quand les CGV changeront de version
+majeure (passage 1.0.0 → 2.0.0). Au login, si `cgv_version < CURRENT_CGV_VERSION`,
+afficher un modal "Nos conditions ont évolué. Merci de relire et de
+réaccepter." Mise à jour de `cgv_accepted_at` et `cgv_version` après
+acceptation. Cette logique n'est nécessaire qu'à la première bump de version
+majeure, pas en V1.
+
+### Estimation de charge — pages légales
+
+Implémentation initiale (cette mission) : **~3 heures** (réalisée).
+
+Suite à exécuter au moment de l'immatriculation :
+
+- Remplissage des placeholders : 30 min
+- Relecture avocat : 1 semaine d'attente externe, ~150-300 € HT
+- Suppression `NEXT_PUBLIC_LEGAL_DRAFT` + redéploiement : 5 min
+
+Consentement explicite (sprint dédié avant premier encaissement) : **1.5-2 heures**.
