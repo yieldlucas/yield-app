@@ -216,3 +216,140 @@ l'edge function par mail.
    → c'est le cœur métier, à monitorer en priorité.
 3. **Alerte webhooks** : `tag:scope:"stripe/webhook"` OR
    `tag:scope:"webhooks/auth/user-created"` → critiques pour billing + signup.
+
+---
+
+## Fix audit PRO-LIMIT — Memo : Fair Use du forfait Pro (à implémenter lors de la commercialisation Pro)
+
+Ce memo documente le **plan d'implémentation différé** du fair use technique
+sur le forfait Pro. **Aucun code n'a été modifié dans la mission audit** pour
+ce fix : c'est une décision délibérée (Voie 3), prise après analyse de l'écart
+entre le brief initial et l'état réel du produit.
+
+### Contexte business
+
+Le forfait Pro à 39,99€/mois est annoncé "scans illimités" sur la landing,
+mais **n'est pas commercialisé** en V1 (bloc "Bientôt — Me prévenir" qui
+collecte des leads via mailto, aucun Stripe checkout actif vers ce forfait).
+
+Pourquoi un fair use sera nécessaire à la commercialisation :
+
+- Coût API Claude par scan : ~0,10–0,15€ (Sonnet vision + tokens output)
+- Marge unitaire Pro : (39,99€ − coûts fixes Stripe/Vercel/Supabase) / N_scans
+- À partir de **~300 scans/mois**, la marge nette par client Pro devient mince
+- Au-delà de **~1000 scans/mois**, marge négative — un dark kitchen ou
+  traiteur événementiel à 2000-3000 BL/mois nous coûterait plus cher que
+  son abonnement
+
+Pourquoi ce n'est pas implémenté en V1 audit :
+
+- Forfait Pro non commercialisé, aucun risque économique immédiat
+- Tous les abonnés actuels sont en Starter à 200 scans hard (cf
+  `MONTHLY_SCAN_QUOTA` dans `app/api/invoices/process/route.ts`)
+- Le scope réel du Pro va au-delà des "scans illimités" : multi-établissement,
+  gestion comptable, comparaison fournisseurs. Les seuils ne peuvent pas être
+  calibrés correctement aujourd'hui sans cette vision produit complète
+- Coder maintenant créerait de la dette technique latente sur du code mort
+  jusqu'à un événement business futur (commercialisation)
+
+### Plan d'implémentation à exécuter au moment du lancement Pro
+
+À suivre intégralement, dans cet ordre, le jour où le bouton de checkout Pro
+devient actif :
+
+1. **Stripe** : créer le Price Pro à 39,99€ dans Stripe Dashboard (mode live ET
+   test). Récupérer les `price_id` Starter et Pro.
+2. **Migration `subscription_tier`** : ajouter colonne `subscription_tier text`
+   à `profiles` (valeurs `'starter'` | `'pro'` | `NULL`). Nullable. Pas de
+   CHECK constraint stricte pour faciliter l'évolution future (`'pro_multi'`,
+   `'enterprise'`, etc.).
+3. **Index** : créer index partiel
+   `CREATE INDEX ... ON profiles(subscription_tier) WHERE subscription_tier IS NOT NULL`
+   pour accélérer les queries de filtrage par tier.
+4. **Trigger anti-tampering** : étendre `prevent_subscription_tampering()`
+   (cf migration 022) pour protéger `subscription_tier` — sinon un user
+   pourrait s'auto-promouvoir Pro via DevTools (`supabase.from('profiles').update({subscription_tier:'pro'})`).
+5. **Table `user_fair_use_alerts`** : créer table
+   `(id, user_id, month text, alerted_at timestamptz)` avec contrainte
+   `UNIQUE (user_id, month)` pour idempotence email admin. RLS owner via
+   `restaurants.owner_id`.
+6. **Backfill** : `UPDATE profiles SET subscription_tier = 'starter' WHERE is_subscribed = true`
+   (tous les users actuels sont Starter par construction historique). À inclure
+   dans la migration `subscription_tier` pour atomicité.
+7. **Env vars Vercel** : ajouter `STRIPE_PRICE_ID_STARTER` et
+   `STRIPE_PRICE_ID_PRO` (preview + production). Documenter qu'ils doivent
+   matcher les Stripe Price IDs en mode live ET test.
+8. **Webhook Stripe** (`app/api/stripe/webhook/route.ts`) : sur les events
+   `customer.subscription.created` / `customer.subscription.updated`, lire
+   `subscription.items.data[0].price.id`, mapper vers tier, mettre à jour
+   `profiles.subscription_tier`. Sur `customer.subscription.deleted` →
+   `subscription_tier = NULL` (déjà géré pour `is_subscribed`, à étendre).
+9. **Logique d'autorisation** (`/api/invoices/process`) : remplacer
+   `MONTHLY_SCAN_QUOTA = 200` constant par un quota tier-aware :
+   - `tier === 'starter'` → 200 scans hard (préservé)
+   - `tier === 'pro'` → fair use soft + hard (cf seuils ci-dessous)
+   - `tier === null` (pas abonné) → flow trial 14j existant (préservé)
+10. **Email admin idempotent** via Resend : au 3e fair_use_warning du mois
+    pour un même user, envoyer "User X a dépassé 1000 scans ce mois. Action
+    commerciale recommandée." Idempotence via `user_fair_use_alerts`.
+11. **UI** : distinguer "YIELD Starter" / "YIELD Pro" sur :
+    - `app/dashboard/profile/page.tsx` (carte abonnement)
+    - `app/dashboard/_components/SubscriptionBanners.tsx` (ActivatedBanner)
+    - `app/dashboard/_components/QuotaExceededModal.tsx` (le copy du
+      "Bientôt — Forfait Pro" doit être retiré une fois le Pro live)
+12. **CGV** (`app/terms/page.tsx`) : ajouter un paragraphe explicite sur le
+    fair use. Texte recommandé : "Le forfait Pro inclut un usage 'fair use'
+    adapté à un restaurant standard, plafonné techniquement à N scans par
+    mois. Au-delà, nous adaptons votre formule en concertation. Les structures
+    multi-établissements ou à très haute rotation peuvent contacter notre
+    équipe pour un forfait sur-mesure." (N à fixer au moment de la
+    commercialisation selon les seuils retenus.)
+
+### Note sur la calibration des seuils
+
+Les seuils 1000/1500 mentionnés dans le rapport d'audit initial étaient basés
+sur un Pro = "scans illimités" sans services additionnels. Avec un Pro =
+"multi-établissement + gestion comptable + comparaison fournisseurs", un user
+Pro avec 3-5 établissements est légitime à 3-5× le volume de scans d'un Starter.
+
+La calibration finale dépendra de :
+
+- Nombre moyen d'établissements par client Pro
+- Volume moyen de scans par établissement par mois
+- Retours utilisateurs sur la friction perçue dans les premières semaines
+
+**Reco initiale** (à valider au moment de l'implémentation) :
+
+- `PRO_FAIR_USE_SOFT_LIMIT = 1500` — avertissement (continue de servir, log
+  warning, email admin à partir du 3e du mois)
+- `PRO_FAIR_USE_HARD_LIMIT = 3000` — blocage avec message courtois invitant
+  à contacter l'équipe pour un sur-mesure
+
+À ajuster après 1-2 mois d'usage Pro réel observé.
+
+### Quick wins avant lancement Pro (out of scope audit)
+
+Choses qui peuvent être faites en amont du lancement Pro sans toucher au code
+business courant :
+
+- Préparer le contenu CGV pour le Pro (paragraphe fair use, voir étape 12
+  ci-dessus)
+- Préparer un template Resend "Votre usage Pro dépasse le seuil normal" + un
+  template admin "User X a dépassé 1000 scans ce mois"
+- Préparer un endpoint admin `/api/admin/scan-usage` qui retourne par user
+  le compte de scans du mois (utile pour debug commercial et pour
+  pré-identifier les futurs power users)
+
+### Estimation de charge
+
+Implémentation complète au moment du lancement Pro : **5–6 heures**.
+
+Décomposition :
+
+- Migrations (`subscription_tier` + `user_fair_use_alerts` + trigger étendu) : 1h
+- Backfill : 5 min (inclus dans migration)
+- Webhook Stripe enrichi (mapping price_id → tier) : 1h
+- Logique d'autorisation tier-aware : 1h
+- Email admin idempotent : 30-45 min
+- UI starter vs pro (3 fichiers) : 1-2h
+- Tests manuels end-to-end : 30 min
