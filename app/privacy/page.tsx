@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { YieldLogo } from "@/app/_components/YieldLogo";
+import { LegalDraftBanner } from "@/app/_components/LegalDraftBanner";
 
 // [audit-fix R3] Politique de confidentialité conforme RGPD. Les champs
 // « À COMPLÉTER » entre crochets sont vérifiés par le hook prebuild
@@ -23,6 +24,8 @@ export default function PrivacyPage() {
           <YieldLogo size={18} className="text-blue-600" />
           <span className="font-black gradient-text">YIELD</span>
         </Link>
+
+        <LegalDraftBanner />
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Politique de Confidentialité</h1>
         <p className="text-slate-400 text-sm mb-10">
