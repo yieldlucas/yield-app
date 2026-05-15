@@ -21,6 +21,17 @@ const SANITY_PRICE_RANGE = { min: 0.01, max: 1000 } as const;
 // de la base produits avec une normalisation absurde.
 const MAX_LABEL_LENGTH = 500;
 
+// Fix audit C4 (Temps 2) — seuil de similarité trigram en dessous duquel on
+// considère qu'un candidat n'est pas suffisamment proche pour proposer un
+// quasi-match. 0.85 = compromis empirique (le brief produit). À ajuster selon
+// les retours ambassadeurs (trop strict = pending_matches ratés, trop lâche
+// = pendings spamés).
+const SIMILARITY_THRESHOLD = 0.85;
+
+// Fix audit C4 (Temps 2) — nombre max de candidats retournés par recherche.
+// 5 = compromis UX (assez pour donner du choix, pas trop pour ne pas noyer).
+const MAX_CANDIDATES = 5;
+
 // CORS restreint à la prod (le edge est appelé server-to-server depuis
 // /api/invoices/process, donc cross-origin browser est inutile en pratique).
 const ALLOWED_ORIGIN = "https://www.yieldapp.fr";
@@ -339,12 +350,25 @@ async function upsertSupplier(
 // Retour null si le libellé est vide après normalisation (item flag needs_review
 // + caller skip via "if (!result) continue"). Voir docs/deployment-notes.md
 // pour la procédure de déploiement (migration 025 + backfill avant déploiement).
+//
+// Fix audit C4 (Temps 2) — retour étendu pour les quasi-matches : si aucun
+// match exact et qu'on trouve des candidats similaires (similarité >= 0.85),
+// on retourne { pendingMatch: true, candidates, normalizedLabel } et le caller
+// insère une row pending_product_matches + une row invoice_items avec
+// product_id=NULL et pending_match=true (la ligne du BL reste comptée dans
+// total_ht facture mais pas de price_history ni d'alerte tant que pas résolue
+// par le chef côté UI). reference_code reste prioritaire : si présent, on
+// shortcut la phase quasi-match (le SKU fournisseur est plus fiable).
+type UpsertProductResult =
+  | { productId: string; wasCreated: boolean }
+  | { pendingMatch: true; candidates: Array<{ product_id: string; name: string; similarity: number }>; normalizedLabel: string };
+
 async function upsertProduct(
   sb: SupabaseClient,
   restaurantId: string,
   supplierId: string,
   item: ExtractedItem
-): Promise<{ productId: string; wasCreated: boolean } | null> {
+): Promise<UpsertProductResult | null> {
   // Fix audit C4 — tronquer les labels aberrants AVANT toute autre opération
   // pour empêcher la pollution de la base produits avec une normalisation absurde.
   if (item.raw_label && item.raw_label.length > MAX_LABEL_LENGTH) {
@@ -394,6 +418,24 @@ async function upsertProduct(
 
   const { data: existing } = await query;
   if (existing) return { productId: existing.id, wasCreated: false };
+
+  // Fix audit C4 (Temps 2) — pas de match exact : on cherche des quasi-matches
+  // avant de créer un nouveau produit. Si reference_code est présent, on SHUNTE
+  // cette phase : un SKU fournisseur est plus fiable que la similarité de libellé,
+  // un nouveau code = vraiment un nouveau produit.
+  if (!item.reference_code) {
+    const candidates = await findSimilarProducts(sb, restaurantId, normalizedLabel, item.unit);
+    if (candidates.length > 0) {
+      console.warn("[audit-fix C4 T2] pending_match candidates found", {
+        raw_label: item.raw_label,
+        normalized: normalizedLabel,
+        unit: item.unit,
+        top_candidate: candidates[0],
+        count: candidates.length,
+      });
+      return { pendingMatch: true, candidates, normalizedLabel };
+    }
+  }
 
   const { data, error } = await sb
     .from("products")
@@ -462,6 +504,89 @@ function normalizeProductLabel(rawLabel: string | null | undefined): string {
 function appendReviewReason(item: ExtractedItem, reason: string): void {
   item.needs_review = true;
   item.review_reason = item.review_reason ? `${item.review_reason}|${reason}` : reason;
+}
+
+/**
+ * Fix audit C4 (Temps 2) — recherche des produits du restaurant dont le
+ * name_normalized est similaire au libellé entrant via pg_trgm. Utilisé
+ * quand le match exact a échoué (donc on s'apprête à créer un nouveau
+ * produit) pour proposer au chef des candidats avant la création.
+ *
+ * Cette recherche est appelée pour tout item ayant un raw_label exploitable
+ * (non vide), indépendamment des flags needs_review (drift_mismatch,
+ * price_out_of_range, label_too_long). La résolution du pending_match
+ * côté UI ne lève pas automatiquement les autres flags needs_review.
+ *
+ * V1 (cette mission) : chaque variante orthographique génère un pending_match.
+ * V2 envisagée (post-mission) : table product_aliases pour mémoriser les
+ * résolutions afin qu'une seconde rencontre du même variant matche directement.
+ *
+ * Filtre par unit : on ne propose pas un candidat en "piece" si l'item entrant
+ * est en "kg" (cohérent avec le filtre du match exact, Temps 1).
+ *
+ * Implémentation : la fonction similarity() de pg_trgm n'est pas directement
+ * appelable via le query builder Supabase JS (.eq/.gte sur fonction). On
+ * passe par une RPC SQL ad-hoc ou un .rpc(). Plus simple ici : utiliser
+ * .filter() avec l'opérateur "%" + tri client-side sur le score. Limit côté
+ * DB pour ne pas ramener toute la base produit.
+ */
+async function findSimilarProducts(
+  sb: SupabaseClient,
+  restaurantId: string,
+  normalizedLabel: string,
+  unit: string,
+): Promise<Array<{ product_id: string; name: string; similarity: number }>> {
+  // pg_trgm opérateur `%` : true si similarité >= pg_trgm.similarity_threshold
+  // (défaut 0.3). On utilisera .filter("name_normalized", "fts", ...) ? Non,
+  // PostgREST n'expose pas directement `%`. La voie sûre est une RPC.
+  // Pour rester dans le pattern du fichier (pas de RPC SQL), on fetch les
+  // candidats avec un préfixe similaire via ilike puis on calcule la similarité
+  // côté JS. Acceptable au volume actuel (~200 produits/restaurant).
+  // Note : si volume grandit, switcher vers une RPC qui exploite l'index GIN.
+  const { data: candidates } = await sb
+    .from("products")
+    .select("id, name, name_normalized")
+    .eq("restaurant_id", restaurantId)
+    .eq("unit", unit)
+    .not("name_normalized", "is", null)
+    .limit(200);
+
+  if (!candidates || candidates.length === 0) return [];
+
+  // Similarité Jaccard sur trigrammes — proche pratiquement du score pg_trgm
+  // similarity() (qui utilise un Jaccard sur ngrams=3 lui aussi).
+  const sourceGrams = trigrams(normalizedLabel);
+  const scored = candidates
+    .map((c: { id: string; name: string; name_normalized: string | null }) => {
+      const targetGrams = trigrams(c.name_normalized ?? "");
+      return { product_id: c.id, name: c.name, similarity: jaccard(sourceGrams, targetGrams) };
+    })
+    .filter((c: { similarity: number }) => c.similarity >= SIMILARITY_THRESHOLD)
+    .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
+    .slice(0, MAX_CANDIDATES);
+
+  return scored;
+}
+
+// Fix audit C4 (Temps 2) — génération de trigrammes (n=3) pour la similarité.
+// Pad avec 2 espaces de chaque côté comme pg_trgm pour bien capter les bords
+// du mot ("tomate" → "  t", " to", "tom", ..., "te ", "e  ").
+function trigrams(s: string): Set<string> {
+  const padded = `  ${s}  `;
+  const set = new Set<string>();
+  for (let i = 0; i <= padded.length - 3; i++) {
+    set.add(padded.slice(i, i + 3));
+  }
+  return set;
+}
+
+// Fix audit C4 (Temps 2) — coefficient de Jaccard sur 2 ensembles de trigrammes.
+// |intersection| / |union|. Retour 0 si l'un des deux est vide.
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const g of a) if (b.has(g)) inter++;
+  return inter / (a.size + b.size - inter);
 }
 
 // Fix audit C5 — comparaison par couple (product_id, supplier_id) pour éviter
@@ -642,14 +767,76 @@ async function processInvoice(
   }[] = [];
 
   for (const item of extracted.items) {
-    // Fix audit C4 — upsertProduct peut retourner null si le libellé est vide
-    // après normalisation. Dans ce cas l'item est déjà flagué needs_review
-    // (côté upsertProduct), on skip le reste du flow pour cet item : pas
-    // d'invoice_items, pas de price_history, pas d'alerte. Le total_ht de
-    // la facture sera légèrement diminué, mais l'item reste tracé dans les
-    // logs serveur (warn "Skip product upsert — empty normalized label").
+    // Fix audit C4 — upsertProduct peut retourner :
+    //   - null : libellé vide après normalisation → skip total de l'item,
+    //     pas de row invoice_items (cf flag empty_label). DIFFÉRENT du cas
+    //     pending_match ci-dessous : ici on n'a aucun raw_label exploitable,
+    //     même pas pour identifier visuellement la ligne au chef.
+    //   - { pendingMatch: true, candidates, normalizedLabel } : quasi-match
+    //     détecté → on crée la row invoice_items avec product_id=NULL et
+    //     pending_match=true (la ligne reste dans total_ht facture, comptée
+    //     comme une ligne réelle), + une row pending_product_matches qui
+    //     liste les candidats pour la résolution future côté UI.
+    //   - { productId, wasCreated } : flow standard.
     const upsertResult = await upsertProduct(sb, restaurantId, supplierId, item);
     if (!upsertResult) continue;
+
+    // Fix audit C4 (Temps 2) — branche pending_match : on insère une row
+    // invoice_items minimale (product_id NULL, pending_match true) et une
+    // row pending_product_matches. Pas de price_history, pas d'alerte tant
+    // que le chef n'a pas résolu via l'UI (cf docs/ui-todo-pending-matches.md).
+    if ("pendingMatch" in upsertResult) {
+      const { data: itemRow, error: itemErr } = await sb
+        .from("invoice_items")
+        .insert({
+          invoice_id: invoiceId,
+          product_id: null,
+          raw_label: item.raw_label,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price_ht: item.unit_price_ht,
+          total_price_ht: item.total_price_ht,
+          vat_rate: item.vat_rate,
+          matched: false,
+          pending_match: true,
+          original_unit_price: item.unit_price_ht,
+          original_quantity: item.quantity,
+        })
+        .select("id")
+        .single();
+
+      if (itemErr || !itemRow) {
+        console.error("[audit-fix C4 T2] failed to insert pending invoice_item", {
+          invoice_id: invoiceId,
+          raw_label: item.raw_label,
+          error: itemErr?.message,
+        });
+        continue;
+      }
+
+      const { error: pendingErr } = await sb
+        .from("pending_product_matches")
+        .insert({
+          restaurant_id: restaurantId,
+          invoice_id: invoiceId,
+          invoice_item_id: itemRow.id,
+          raw_label: item.raw_label,
+          normalized_label: upsertResult.normalizedLabel,
+          unit: item.unit,
+          candidate_product_ids: upsertResult.candidates,
+        });
+
+      if (pendingErr) {
+        console.error("[audit-fix C4 T2] failed to insert pending_product_matches", {
+          invoice_id: invoiceId,
+          invoice_item_id: itemRow.id,
+          error: pendingErr.message,
+        });
+      }
+      // Skip price_history + alerting pour cet item (pas de product_id résolu).
+      continue;
+    }
+
     const { productId, wasCreated } = upsertResult;
     wasCreated ? itemsCreated++ : itemsMatched++;
 
