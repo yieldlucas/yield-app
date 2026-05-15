@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { YieldLogo } from "@/app/_components/YieldLogo";
 
-// ⚠️  PLACEHOLDERS LÉGAUX À REMPLIR AVANT PROD
-// ───────────────────────────────────────────
-// Les champs [TODO] doivent être remplacés avec les VRAIES informations.
-// Cette politique RGPD est inspirée des standards SaaS B2B FR (cnil.fr).
-// FAIRE RELIRE PAR UN AVOCAT / DPO avant lancement.
+// [audit-fix R3] Politique de confidentialité conforme RGPD. Les champs
+// [À COMPLÉTER : ...] sont vérifiés par le hook prebuild
+// (scripts/check-legal-placeholders.ts). Le déploiement production échoue
+// tant qu'au moins un placeholder reste — voir docs/deployment-notes.md.
+//
+// Document à FAIRE RELIRE PAR UN AVOCAT / DPO (Captain Contrat / LegalPlace)
+// avant le premier paiement encaissé. La rédaction ci-dessous est sérieuse
+// et complète pour un SaaS B2B FR mais n'est PAS un avis juridique.
 
 export const metadata = {
   title: "Politique de Confidentialité — Yield",
@@ -22,17 +25,23 @@ export default function PrivacyPage() {
         </Link>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Politique de Confidentialité</h1>
-        <p className="text-slate-400 text-sm mb-10">Dernière mise à jour : <span data-todo>[TODO date]</span></p>
+        <p className="text-slate-400 text-sm mb-10">
+          Date d&apos;entrée en vigueur : <span data-todo>[À COMPLÉTER : date d&apos;entrée en vigueur — DD/MM/YYYY]</span>
+        </p>
 
         <Section title="1. Responsable du traitement">
           <p>
             Le responsable du traitement des données personnelles collectées via le Service
-            Yield est <strong>[TODO Yield SAS / SARL]</strong>, dont le siège social est situé
-            <span data-todo>[TODO adresse]</span>, immatriculée au RCS de <span data-todo>[TODO ville]</span>
-            sous le numéro <span data-todo>[TODO SIRET]</span>.
+            Yield est <strong>[À COMPLÉTER : raison sociale exacte]</strong>, dont le siège social est situé{" "}
+            <span data-todo>[À COMPLÉTER : adresse postale complète]</span>, immatriculée au{" "}
+            <span data-todo>[À COMPLÉTER : RCS ville et numéro - &quot;Non applicable (EI)&quot; si auto-entrepreneur]</span>{" "}
+            sous le numéro SIRET <span data-todo>[À COMPLÉTER : SIRET 14 chiffres]</span>.
           </p>
           <p>
-            Contact pour toute question relative aux données personnelles : chef@yieldapp.fr.
+            Responsable de la protection des données :{" "}
+            <span data-todo>[À COMPLÉTER : nom et prénom du DPO ou responsable de traitement RGPD - peut être identique au représentant légal pour une EI]</span>.
+            Contact pour toute question relative aux données personnelles :{" "}
+            <a href="mailto:chef@yieldapp.fr" className="text-blue-600 hover:underline">chef@yieldapp.fr</a>.
           </p>
         </Section>
 
@@ -93,23 +102,85 @@ export default function PrivacyPage() {
               <strong>Supabase Inc.</strong> (États-Unis) — hébergement de la base de données
               et stockage des fichiers, sur serveurs situés dans l&apos;Union Européenne (AWS
               Paris, eu-west-3). Transfert hors UE encadré par les Clauses Contractuelles
-              Types (SCC) de la Commission européenne.
+              Types (SCC) de la Commission européenne.{" "}
+              <a href="https://supabase.com/privacy" className="text-blue-600 hover:underline">Politique Supabase</a>.
             </li>
             <li>
               <strong>Vercel Inc.</strong> (États-Unis) — hébergement de l&apos;application
-              web. Couverture SCC.
+              web. Couverture SCC.{" "}
+              <a href="https://vercel.com/legal/privacy-policy" className="text-blue-600 hover:underline">Politique Vercel</a>.
             </li>
             <li>
               <strong>Stripe Payments Europe Ltd.</strong> (Irlande) — gestion des paiements
-              et des abonnements. Couverture UE.
+              et des abonnements. Couverture UE.{" "}
+              <a href="https://stripe.com/privacy" className="text-blue-600 hover:underline">Politique Stripe</a>.
             </li>
             <li>
               <strong>Anthropic PBC</strong> (États-Unis) — analyse des bons de livraison
               par modèle d&apos;intelligence artificielle (Claude). Les fichiers transmis ne
               sont pas conservés par Anthropic au-delà du traitement et ne sont pas utilisés
-              pour entraîner ses modèles. Couverture SCC.
+              pour entraîner ses modèles. Couverture SCC.{" "}
+              <a href="https://www.anthropic.com/legal/privacy" className="text-blue-600 hover:underline">Politique Anthropic</a>.
+            </li>
+            <li>
+              <strong>Resend (Resend Inc.)</strong> (États-Unis) — envoi des e-mails
+              transactionnels (bienvenue, codes de connexion OTP, rappels d&apos;essai,
+              récap mensuel). Aucune utilisation publicitaire ou marketing tiers. Couverture
+              SCC.{" "}
+              <a href="https://resend.com/legal/privacy-policy" className="text-blue-600 hover:underline">Politique Resend</a>.
+            </li>
+            <li>
+              <strong>Sentry (Functional Software, Inc.)</strong> (États-Unis) — monitoring
+              des erreurs applicatives et alertes en cas d&apos;incident. Les données
+              personnelles éventuellement contenues dans les rapports d&apos;erreur (e-mails,
+              libellés produits, identifiants) sont filtrées et masquées avant transmission
+              (mécanisme `beforeSend`). Couverture SCC.{" "}
+              <a href="https://sentry.io/privacy/" className="text-blue-600 hover:underline">Politique Sentry</a>.
             </li>
           </ul>
+        </Section>
+
+        <Section title="4 bis. Transferts hors Union Européenne">
+          <p>
+            Certains sous-traitants ci-dessus sont établis hors de l&apos;Union Européenne
+            (États-Unis principalement). Pour chaque transfert hors UE, Yield s&apos;assure
+            que le sous-traitant offre un niveau de protection adéquat via :
+          </p>
+          <ul className="list-disc list-inside space-y-1 ml-2">
+            <li>
+              les <strong>Clauses Contractuelles Types (SCC)</strong> adoptées par la
+              Commission européenne (décision 2021/914), incluses dans les Data Processing
+              Agreements signés avec ces sous-traitants ; et / ou
+            </li>
+            <li>
+              le cadre <strong>EU-US Data Privacy Framework</strong> (DPF) pour les
+              sous-traitants américains certifiés.
+            </li>
+          </ul>
+        </Section>
+
+        <Section title="4 ter. Données métier sensibles">
+          <p>
+            Les données métier du Client (prix fournisseurs, libellés produits, fiches
+            techniques recettes) ne sont pas des données personnelles au sens strict du
+            RGPD, mais constituent des données commerciales sensibles. Yield s&apos;engage
+            contractuellement à :
+          </p>
+          <ul className="list-disc list-inside space-y-1 ml-2">
+            <li>ne pas divulguer ces données à des tiers ;</li>
+            <li>ne pas les utiliser à des fins concurrentielles ou commerciales propres ;</li>
+            <li>les protéger par les mêmes mesures de sécurité que les données personnelles
+              (RLS, chiffrement, isolation par compte).</li>
+          </ul>
+          <p>
+            Une future fonctionnalité de <strong>comparaison de prix anonymisée entre
+            restaurateurs</strong> est envisagée. Cette fonctionnalité fera l&apos;objet d&apos;un
+            <strong> consentement opt-in séparé et explicite</strong> au moment de son
+            activation. Les données partagées seront strictement anonymisées par
+            <strong> k-anonymisation</strong> (un produit ne sera inclus dans une statistique
+            qu&apos;à partir d&apos;au moins 5 restaurateurs distincts), empêchant toute
+            réidentification d&apos;un Client par croisement de prix.
+          </p>
         </Section>
 
         <Section title="5. Durée de conservation">

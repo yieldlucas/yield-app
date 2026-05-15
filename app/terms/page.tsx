@@ -1,15 +1,15 @@
 import Link from "next/link";
 import { YieldLogo } from "@/app/_components/YieldLogo";
 
-// ⚠️  PLACEHOLDERS LÉGAUX À REMPLIR AVANT PROD
-// ───────────────────────────────────────────
-// Les champs marqués [TODO] doivent être remplacés avec les VRAIES informations
-// juridiques de Yield (forme sociale, SIRET, RCS, adresse siège, capital social,
-// directeur de publication). Je n'invente pas ces valeurs.
+// [audit-fix R3] CGU et CGV fusionnées en V1 — séparation /cgu et /cgv à
+// envisager au lancement du forfait Pro (cf docs/deployment-notes.md
+// section "Fix audit R3"). Les champs [À COMPLÉTER : ...] sont vérifiés
+// par le hook prebuild (scripts/check-legal-placeholders.ts). Le déploiement
+// production échoue tant qu'au moins un placeholder reste.
 //
-// Ces CGU sont rédigées pour un SaaS B2B français, basées sur les standards
-// usuels (Lemonway, Pennylane, Pappers etc.) — à FAIRE RELIRE PAR UN AVOCAT
-// avant lancement, c'est cheap et ça couvre le risque contentieux.
+// Document à FAIRE RELIRE PAR UN AVOCAT (Captain Contrat / LegalPlace,
+// ~150 € HT) avant le premier paiement encaissé. La rédaction ci-dessous
+// est sérieuse et complète pour un SaaS B2B FR mais n'est PAS un avis juridique.
 
 export const metadata = {
   title: "Conditions Générales d'Utilisation — Yield",
@@ -26,24 +26,26 @@ export default function TermsPage() {
         </Link>
 
         <h1 className="text-3xl font-bold text-slate-900 mb-2">Conditions Générales d&apos;Utilisation et de Vente</h1>
-        <p className="text-slate-400 text-sm mb-10">Dernière mise à jour : <span data-todo>[TODO date]</span></p>
+        <p className="text-slate-400 text-sm mb-10">
+          Date d&apos;entrée en vigueur : <span data-todo>[À COMPLÉTER : date d&apos;entrée en vigueur — DD/MM/YYYY]</span>
+        </p>
 
         <Section title="1. Éditeur du service">
           <p>
-            Le service Yield (ci-après « le Service ») est édité par <strong>[TODO Yield SAS / SARL]</strong>,
-            <span data-todo>[TODO forme sociale]</span> au capital de <span data-todo>[TODO capital]</span>,
-            immatriculée au RCS de <span data-todo>[TODO ville]</span> sous le numéro
-            <span data-todo>[TODO SIRET]</span>, dont le siège social est situé
-            <span data-todo>[TODO adresse complète]</span>.
+            Le service Yield (ci-après « le Service ») est édité par <strong>[À COMPLÉTER : raison sociale exacte]</strong>,{" "}
+            <span data-todo>[À COMPLÉTER : forme juridique - EI (auto-entrepreneur) ou EURL]</span> au capital de <span data-todo>[À COMPLÉTER : capital social - &quot;Capital de X €&quot; ou &quot;Non applicable (EI)&quot;]</span>,
+            immatriculée au <span data-todo>[À COMPLÉTER : RCS ville et numéro - &quot;Non applicable (EI)&quot; si auto-entrepreneur]</span>, sous le numéro
+            SIRET <span data-todo>[À COMPLÉTER : SIRET 14 chiffres]</span>, dont le siège social est situé{" "}
+            <span data-todo>[À COMPLÉTER : adresse postale complète]</span>.
           </p>
           <p>
-            Numéro TVA intracommunautaire : <span data-todo>[TODO FRXX...]</span>.<br />
-            Directeur de la publication : <span data-todo>[TODO Nom Prénom]</span>.<br />
-            Contact : chef@yieldapp.fr.
+            Numéro TVA intracommunautaire : <span data-todo>[À COMPLÉTER : numéro TVA intracommunautaire - &quot;Non assujetti (franchise en base)&quot; si EI]</span>.<br />
+            Directeur de la publication : <span data-todo>[À COMPLÉTER : nom et prénom du représentant légal]</span>.<br />
+            Contact : <a href="mailto:chef@yieldapp.fr" className="text-blue-600 hover:underline">chef@yieldapp.fr</a>.
           </p>
           <p>
-            Hébergeur : Vercel Inc., 440 N Barranca Ave #4133, Covina, CA 91723, USA.<br />
-            Hébergement des données : Supabase (AWS Paris, France — région eu-west-3).
+            Détail complet sur la page{" "}
+            <Link href="/legal" className="text-blue-600 hover:underline">Mentions légales</Link>.
           </p>
         </Section>
 
@@ -198,8 +200,7 @@ export default function TermsPage() {
         <Section title="11. Droit applicable et juridiction">
           <p>
             Les présentes CGU sont soumises au droit français. En cas de litige, et après
-            tentative de résolution amiable, les tribunaux de <span data-todo>[TODO ville
-            du siège]</span> seront seuls compétents, nonobstant pluralité de défendeurs
+            tentative de résolution amiable, les tribunaux de <span data-todo>[À COMPLÉTER : juridiction compétente en cas de litige - tribunal de la ville du siège]</span> seront seuls compétents, nonobstant pluralité de défendeurs
             ou appel en garantie.
           </p>
         </Section>
