@@ -367,14 +367,21 @@ async function upsertProduct(
   return { productId: data.id, wasCreated: true };
 }
 
+// Fix audit C5 — comparaison par couple (product_id, supplier_id) pour éviter
+// les fausses alertes inter-fournisseurs (ex : tomate Metro 2€/kg → Promocash 3€/kg).
+// Retour null si premier achat de ce produit chez ce fournisseur : aucune
+// variation à signaler, la garde existante "if (previousPrice === null) continue"
+// (ligne ~589) gère naturellement ce cas en n'émettant pas d'alerte.
 async function getLastPrice(
   sb: SupabaseClient,
-  productId: string
+  productId: string,
+  supplierId: string,
 ): Promise<number | null> {
   const { data } = await sb
     .from("price_history")
     .select("price_ht")
     .eq("product_id", productId)
+    .eq("supplier_id", supplierId)
     .order("recorded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -545,17 +552,20 @@ async function processInvoice(
 
     // Capture le dernier prix AVANT d'insérer le nouveau (sinon getLastPrice
     // renverrait celui qu'on est en train d'écrire).
-    const previousPrice = await getLastPrice(sb, productId);
+    // Fix audit C5 — supplierId ajouté pour comparaison par couple (product, supplier)
+    const previousPrice = await getLastPrice(sb, productId, supplierId);
     matchingResults.push({ productId, item, previousPrice });
 
     // Lignes flaggées needs_review : on garde la trace dans invoice_items
     // (matched=false) mais on n'écrit PAS dans price_history — un prix
     // incohérent fausserait l'historique à vie.
     if (!item.needs_review) {
+      // Fix audit C5 — supplier_id ajouté pour permettre comparaison par couple produit/fournisseur
       await sb.from("price_history").insert({
         product_id: productId,
         price_ht: item.unit_price_ht,
         invoice_id: invoiceId,
+        supplier_id: supplierId,
         source: "invoice",
       });
     }
