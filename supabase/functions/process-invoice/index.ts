@@ -15,6 +15,12 @@ const PRICE_ALERT_THRESHOLD_PCT = 7;
 // Fix audit C6 — garde-fou anti-hallucination IA sur les prix extraits
 const SANITY_PRICE_RANGE = { min: 0.01, max: 1000 } as const;
 
+// Fix audit C4 — borne haute sur la longueur d'un raw_label avant normalisation.
+// Une hallucination IA qui retourne un libellé de 3000 chars est un signal fort
+// d'anomalie OCR : on tronque ET on flag needs_review pour empêcher la pollution
+// de la base produits avec une normalisation absurde.
+const MAX_LABEL_LENGTH = 500;
+
 // CORS restreint à la prod (le edge est appelé server-to-server depuis
 // /api/invoices/process, donc cross-origin browser est inutile en pratique).
 const ALLOWED_ORIGIN = "https://www.yieldapp.fr";
@@ -328,12 +334,49 @@ async function upsertSupplier(
   return data.id;
 }
 
+// Fix audit C4 — recherche par name_normalized pour éviter les doublons dus
+// aux variations de casse/espaces/ponctuation dans les libellés OCR.
+// Retour null si le libellé est vide après normalisation (item flag needs_review
+// + caller skip via "if (!result) continue"). Voir docs/deployment-notes.md
+// pour la procédure de déploiement (migration 025 + backfill avant déploiement).
 async function upsertProduct(
   sb: SupabaseClient,
   restaurantId: string,
   supplierId: string,
   item: ExtractedItem
-): Promise<{ productId: string; wasCreated: boolean }> {
+): Promise<{ productId: string; wasCreated: boolean } | null> {
+  // Fix audit C4 — tronquer les labels aberrants AVANT toute autre opération
+  // pour empêcher la pollution de la base produits avec une normalisation absurde.
+  if (item.raw_label && item.raw_label.length > MAX_LABEL_LENGTH) {
+    console.warn("[audit-fix C4] raw_label truncated", {
+      original_length: item.raw_label.length,
+      truncated_to: MAX_LABEL_LENGTH,
+      preview: item.raw_label.slice(0, 80),
+    });
+    item.raw_label = item.raw_label.slice(0, MAX_LABEL_LENGTH);
+    appendReviewReason(item, "label_too_long");
+  }
+
+  const normalizedLabel = normalizeProductLabel(item.raw_label);
+
+  // Fix audit C4 — label vide après normalisation : on ne peut rien identifier,
+  // on skip l'item proprement (le caller ignore le retour null et continue).
+  // Trade-off : la ligne disparaît du total_ht facture. Acceptable car un
+  // label vide indique une erreur OCR amont (cf log warn ci-dessous + needs_review).
+  if (normalizedLabel === "") {
+    console.warn("[audit-fix C4] Skip product upsert — empty normalized label", {
+      raw_label: item.raw_label,
+    });
+    appendReviewReason(item, "empty_label");
+    return null;
+  }
+
+  // Priorité 1 : match par reference_code (le plus fiable, c'est le SKU/EAN
+  // du fournisseur). Si présent, on shortcut la recherche par name_normalized.
+  // Priorité 2 : match par (name_normalized, unit) — Fix audit C4. Le filtre
+  // sur unit est crucial : "Tomate grappe" en "kg" et "Tomate grappe" en "piece"
+  // sont 2 articles distincts qui ne doivent PAS partager d'historique de prix
+  // (sinon le calcul d'impact marge Fix C1 mélangerait kg et pièces).
   const query = item.reference_code
     ? sb
         .from("products")
@@ -345,7 +388,8 @@ async function upsertProduct(
         .from("products")
         .select("id")
         .eq("restaurant_id", restaurantId)
-        .ilike("name", item.raw_label)
+        .eq("name_normalized", normalizedLabel)
+        .eq("unit", item.unit)
         .maybeSingle();
 
   const { data: existing } = await query;
@@ -357,6 +401,7 @@ async function upsertProduct(
       restaurant_id: restaurantId,
       supplier_id: supplierId,
       name: item.raw_label,
+      name_normalized: normalizedLabel,
       unit: item.unit,
       reference_code: item.reference_code ?? null,
     })
@@ -365,6 +410,58 @@ async function upsertProduct(
 
   if (error) throw new Error(`Erreur création produit : ${error.message}`);
   return { productId: data.id, wasCreated: true };
+}
+
+/**
+ * Fix audit C4 — normalise un libellé produit OCR pour matcher les variations
+ * de casse, espaces, accents, ligatures et ponctuation. La même fonction est
+ * dupliquée dans scripts/backfill-product-names.ts (Node) pour le backfill
+ * des produits pré-migration. Toute modif ici doit être synchronisée là-bas.
+ *
+ * Étapes appliquées dans l'ordre :
+ *   1. Retour "" si input null/undefined/vide (caller doit gérer ce cas).
+ *   2. Cap à MAX_LABEL_LENGTH chars (anti-hallucination IA).
+ *   3. toLowerCase + NFD pour décomposer les accents combinables.
+ *   4. Retrait des diacritiques combinants (̀-ͯ).
+ *   5. Mapping explicite des ligatures œ→oe et æ→ae (NFD ne décompose PAS ces
+ *      caractères qui sont des entrées Unicode atomiques, pas des compositions).
+ *   6. Séparation des chiffres collés aux unités courantes : "4kg" → "4 kg".
+ *      Ordre des alternances : multi-caractères avant simples (ml avant l, etc.)
+ *      pour ne pas matcher partiellement.
+ *   7. Ponctuation parasite → espace.
+ *   8. Espaces multiples → simple.
+ *   9. Trim.
+ *
+ * Exemples (doc vivante — à préserver lors de toute modification) :
+ *   "TOMATE GRAPPE 4KG"    → "tomate grappe 4 kg"
+ *   "Tomate grappe 4 kg"   → "tomate grappe 4 kg"
+ *   "TOMATES, BIO - 1KG"   → "tomates bio 1 kg"
+ *   "Œufs Bio - Lot de 6"  → "oeufs bio lot de 6"
+ *   "500ml"                → "500 ml"   (pas "500m l", ordre alternance OK)
+ *   "1.5L"                 → "1.5 l"
+ *   ""                     → ""         (caller doit flag needs_review)
+ */
+function normalizeProductLabel(rawLabel: string | null | undefined): string {
+  if (!rawLabel) return "";
+  const capped = rawLabel.length > MAX_LABEL_LENGTH ? rawLabel.slice(0, MAX_LABEL_LENGTH) : rawLabel;
+  if (capped.trim() === "") return "";
+  return capped
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/œ/g, "oe")
+    .replace(/æ/g, "ae")
+    .replace(/(\d)(ml|cl|kg|l|g|pc|piece)\b/gi, "$1 $2")
+    .replace(/[,\-_;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Fix audit C4 — ajoute une raison au flag needs_review d'un item, en
+// concaténant avec "|" si une raison était déjà présente (cumul avec Fix C6).
+function appendReviewReason(item: ExtractedItem, reason: string): void {
+  item.needs_review = true;
+  item.review_reason = item.review_reason ? `${item.review_reason}|${reason}` : reason;
 }
 
 // Fix audit C5 — comparaison par couple (product_id, supplier_id) pour éviter
@@ -545,9 +642,15 @@ async function processInvoice(
   }[] = [];
 
   for (const item of extracted.items) {
-    const { productId, wasCreated } = await upsertProduct(
-      sb, restaurantId, supplierId, item
-    );
+    // Fix audit C4 — upsertProduct peut retourner null si le libellé est vide
+    // après normalisation. Dans ce cas l'item est déjà flagué needs_review
+    // (côté upsertProduct), on skip le reste du flow pour cet item : pas
+    // d'invoice_items, pas de price_history, pas d'alerte. Le total_ht de
+    // la facture sera légèrement diminué, mais l'item reste tracé dans les
+    // logs serveur (warn "Skip product upsert — empty normalized label").
+    const upsertResult = await upsertProduct(sb, restaurantId, supplierId, item);
+    if (!upsertResult) continue;
+    const { productId, wasCreated } = upsertResult;
     wasCreated ? itemsCreated++ : itemsMatched++;
 
     // Capture le dernier prix AVANT d'insérer le nouveau (sinon getLastPrice
