@@ -382,30 +382,100 @@ async function getLastPrice(
   return data?.price_ht ?? null;
 }
 
+/**
+ * Fix audit C1 — helper local Deno pour la conversion d'unité entre l'unité
+ * de la recette et l'unité du produit, avec contrat STRICT sur l'incompatibilité.
+ *
+ * Pourquoi ce helper existe en parallèle des deux autres implémentations :
+ *   - public.unit_conversion_factor(text, text) SQL (migration 014) → retourne 1
+ *     sur unités incompatibles (fallback silencieux). Inutilisable pour C1 où
+ *     on doit DÉTECTER l'incompatibilité pour skip + warn (mieux vaut absence
+ *     d'alerte que fausse alerte d'impact marge).
+ *   - unitConversionFactor() JS dans app/dashboard/_lib/recipes-data.ts →
+ *     idem fallback silencieux à 1, et inaccessible depuis l'edge Deno (isolé).
+ *
+ * Ce helper retourne null en cas d'incompatibilité (suffixe "Strict" pour
+ * marquer la divergence de contrat). Couvre les mêmes familles métier que
+ * la SQL (kg↔g, l↔cl↔ml, même unité). Toute fusion future doit explicitement
+ * choisir une sémantique unique pour les trois implémentations.
+ */
+function getUnitConversionFactorStrict(
+  fromUnit: string | null | undefined,
+  toUnit: string | null | undefined,
+): number | null {
+  if (!fromUnit || !toUnit || fromUnit.trim() === "" || toUnit.trim() === "") {
+    return null;
+  }
+  const f = fromUnit.trim().toLowerCase();
+  const t = toUnit.trim().toLowerCase();
+  if (f === t) return 1;
+  // Famille masse — facteur exprimé en kg.
+  const massMap: Record<string, number> = { g: 0.001, kg: 1 };
+  if (massMap[f] !== undefined && massMap[t] !== undefined) return massMap[f] / massMap[t];
+  // Famille volume — facteur exprimé en L.
+  const volMap: Record<string, number> = { ml: 0.001, cl: 0.01, l: 1 };
+  if (volMap[f] !== undefined && volMap[t] !== undefined) return volMap[f] / volMap[t];
+  // Familles incompatibles (ex: "piece" vs "kg") ou unités inconnues.
+  return null;
+}
+
+// Fix audit C1 — invoiceId ajouté à la signature pour pouvoir logger les skips
+// d'unités incompatibles avec le contexte facture (debug en logs Supabase).
 async function getAffectedRecipes(
   sb: SupabaseClient,
+  invoiceId: string,
   productId: string,
   oldPrice: number,
   newPrice: number
 ): Promise<AffectedRecipe[]> {
+  // Fix audit C1 — sélection ajoutée de quantity_unit et product_unit
+  // (migration 014) pour appliquer la conversion d'unité dans le calcul d'impact.
   const { data: usages } = await sb
     .from("recipe_ingredients")
-    .select(`quantity, recipe:recipes(id, name, selling_price, vat_rate)`)
+    .select(`quantity, quantity_unit, product_unit, recipe:recipes(id, name, selling_price, vat_rate)`)
     .eq("product_id", productId);
 
   if (!usages?.length) return [];
 
+  // Fix audit C1 — application de la conversion d'unité avant calcul d'impact marge
+  // Sans ça, une recette en "g" avec un produit au "kg" produisait un extraCost
+  // multiplié par 1000 (bug critique remonté à l'audit).
+  //
+  // Scénarios de validation :
+  // 1. Recette 200g de farine, produit au kg, hausse 1€/kg → impact attendu : 0.20€
+  // 2. Recette 50cl d'huile, produit au L, hausse 2€/L → impact attendu : 1.00€
+  // 3. Recette 1 pièce de saumon, produit à la pièce, hausse 3€/pièce → impact attendu : 3.00€
+  // 4. Unités incompatibles (piece vs kg, sans pack_size) → skip + warn, AUCUNE alerte chiffrée fausse.
   return usages
     .filter((u: { recipe: unknown }) => u.recipe)
-    .map((u: { quantity: number; recipe: { id: string; name: string; selling_price: number; vat_rate: number } }) => {
+    .map((u: {
+      quantity: number;
+      quantity_unit: string | null;
+      product_unit: string | null;
+      recipe: { id: string; name: string; selling_price: number; vat_rate: number };
+    }) => {
       const recipe = u.recipe;
+      const factor = getUnitConversionFactorStrict(u.quantity_unit, u.product_unit);
+      if (factor === null) {
+        console.warn("[audit-fix C1] Skip recipe impact — incompatible units", {
+          invoice_id: invoiceId,
+          recipe_id: recipe.id,
+          recipe_name: recipe.name,
+          product_id: productId,
+          quantity: u.quantity,
+          quantity_unit: u.quantity_unit,
+          product_unit: u.product_unit,
+        });
+        return null;
+      }
       const sellingPriceHt = recipe.selling_price / (1 + recipe.vat_rate / 100);
-      const extraCost = (newPrice - oldPrice) * u.quantity;
+      const extraCost = (newPrice - oldPrice) * u.quantity * factor;
       const impactPts = sellingPriceHt > 0
         ? Math.round((extraCost / sellingPriceHt) * 10000) / 100
         : 0;
       return { id: recipe.id, name: recipe.name, margin_impact_pts: impactPts };
-    });
+    })
+    .filter((r: AffectedRecipe | null): r is AffectedRecipe => r !== null);
 }
 
 // ─── Main pipeline ────────────────────────────────────────
@@ -517,8 +587,9 @@ async function processInvoice(
     const changePct = ((r.item.unit_price_ht - r.previousPrice) / r.previousPrice) * 100;
     if (Math.abs(changePct) < PRICE_ALERT_THRESHOLD_PCT) continue;
 
+    // Fix audit C1 — invoiceId passé au helper pour les logs d'unités incompatibles
     const affectedRecipes = await getAffectedRecipes(
-      sb, r.productId, r.previousPrice, r.item.unit_price_ht
+      sb, invoiceId, r.productId, r.previousPrice, r.item.unit_price_ht
     );
 
     await sb.from("margin_alerts").insert({
