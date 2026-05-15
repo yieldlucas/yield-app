@@ -2,7 +2,7 @@ import Link from "next/link";
 import { YieldLogo } from "@/app/_components/YieldLogo";
 
 // [audit-fix R3] Politique de confidentialité conforme RGPD. Les champs
-// [À COMPLÉTER : ...] sont vérifiés par le hook prebuild
+// « À COMPLÉTER » entre crochets sont vérifiés par le hook prebuild
 // (scripts/check-legal-placeholders.ts). Le déploiement production échoue
 // tant qu'au moins un placeholder reste — voir docs/deployment-notes.md.
 //

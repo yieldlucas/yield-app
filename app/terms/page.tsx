@@ -3,9 +3,9 @@ import { YieldLogo } from "@/app/_components/YieldLogo";
 
 // [audit-fix R3] CGU et CGV fusionnées en V1 — séparation /cgu et /cgv à
 // envisager au lancement du forfait Pro (cf docs/deployment-notes.md
-// section "Fix audit R3"). Les champs [À COMPLÉTER : ...] sont vérifiés
-// par le hook prebuild (scripts/check-legal-placeholders.ts). Le déploiement
-// production échoue tant qu'au moins un placeholder reste.
+// section "Fix audit R3"). Les champs « À COMPLÉTER » entre crochets sont
+// vérifiés par le hook prebuild (scripts/check-legal-placeholders.ts).
+// Le déploiement production échoue tant qu'au moins un placeholder reste.
 //
 // Document à FAIRE RELIRE PAR UN AVOCAT (Captain Contrat / LegalPlace,
 // ~150 € HT) avant le premier paiement encaissé. La rédaction ci-dessous
