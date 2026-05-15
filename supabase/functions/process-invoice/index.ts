@@ -12,6 +12,9 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.54.0";
 // vraies hausses fournisseur sans noyer le chef.
 const PRICE_ALERT_THRESHOLD_PCT = 7;
 
+// Fix audit C6 — garde-fou anti-hallucination IA sur les prix extraits
+const SANITY_PRICE_RANGE = { min: 0.01, max: 1000 } as const;
+
 // CORS restreint à la prod (le edge est appelé server-to-server depuis
 // /api/invoices/process, donc cross-origin browser est inutile en pratique).
 const ALLOWED_ORIGIN = "https://www.yieldapp.fr";
@@ -32,6 +35,9 @@ interface ExtractedItem {
   total_price_ht: number;
   vat_rate: number;
   needs_review?: boolean;
+  // Fix audit C6 — raisons cumulées du flag needs_review, séparées par "|"
+  // (ex: "drift_mismatch", "price_out_of_range", "drift_mismatch|price_out_of_range")
+  review_reason?: string;
 }
 
 interface ExtractedInvoice {
@@ -159,13 +165,27 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
     const drift = total_price_ht > 0
       ? Math.abs(expected - total_price_ht) / total_price_ht
       : 0;
+
+    // Fix audit C6 — cumul des raisons de flag dans un array temporaire, puis
+    // sérialisation en string "|"-séparée pour rester compatible avec le typage
+    // existant (review_reason?: string) sans introduire de structure plus lourde.
+    // TODO audit: l'UI ne gère pas encore l'affichage des items needs_review —
+    // à traiter dans un fix UX séparé (afficher les lignes à valider dans la
+    // page détail facture, permettre au chef de corriger ou rejeter).
+    const reasons: string[] = [];
+    if (drift > 0.05) reasons.push("drift_mismatch");
+    if (unit_price_ht < SANITY_PRICE_RANGE.min || unit_price_ht > SANITY_PRICE_RANGE.max) {
+      reasons.push("price_out_of_range");
+    }
+
     return {
       ...item,
       quantity,
       unit_price_ht,
       total_price_ht,
       vat_rate: Number(item.vat_rate) ?? 5.5,
-      needs_review: drift > 0.05,
+      needs_review: reasons.length > 0,
+      review_reason: reasons.length > 0 ? reasons.join("|") : undefined,
     };
   });
 
@@ -753,6 +773,19 @@ serve(async (req: Request) => {
       await markInvoiceError(sb, invoice_id, failureMessage);
       if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: failureMessage, details: String(err) }, 422);
+    }
+
+    // Fix audit C6 — log des items dont le prix tombe hors range raisonnable
+    // (visible dans les logs Supabase Edge même tant que l'UI ne montre rien)
+    for (const flaggedItem of extracted.items) {
+      if (flaggedItem.review_reason?.includes("price_out_of_range")) {
+        console.warn("[process-invoice] price_out_of_range", {
+          invoice_id,
+          raw_label: flaggedItem.raw_label,
+          unit_price_ht: flaggedItem.unit_price_ht,
+          review_reason: flaggedItem.review_reason,
+        });
+      }
     }
 
     // Pipeline complet
