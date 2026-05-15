@@ -9,10 +9,12 @@ Ordre d'exécution **impératif** :
 
 1. Appliquer `024_price_history_supplier.sql` dans Supabase SQL Editor (le backfill SQL s'exécute automatiquement, idempotent).
 2. Vérifier post-migration :
+
    ```sql
    select count(*) from public.price_history
     where invoice_id is not null and supplier_id is null;
    ```
+
    Doit retourner `0`.
 3. **Puis seulement après** déployer l'edge function modifiée (commit `28924bd`).
    Si l'edge function est déployée avant la migration, les INSERT échoueront
@@ -36,21 +38,27 @@ Ordre d'exécution **impératif** :
 1. Appliquer `025_products_name_normalized.sql` dans Supabase SQL Editor.
    La colonne est nullable, les rows existantes restent à `null` pour l'instant.
 2. Vérifier en `--dry-run` (mode par défaut) que le script trouve les bons rows :
+
    ```bash
    npx tsx scripts/backfill-product-names.ts
    ```
+
    Inspecte la sortie : les libellés à normaliser doivent ressembler à ce que tu
    attends ("TOMATE 4KG" → "tomate 4 kg", etc.).
 3. Lancer le backfill réel :
+
    ```bash
    npx tsx scripts/backfill-product-names.ts --apply
    ```
+
    Idempotent (relançable). Le script saute les rows déjà correctes et celles
    dont le `name` est illisible (vide après normalisation).
 4. Vérifier post-backfill :
+
    ```sql
    select count(*) from public.products where name_normalized is null;
    ```
+
    Doit être proche de `0` (sauf produits dont le `name` est aberrant).
 5. **Puis seulement après** déployer l'edge function modifiée (commit du Fix C4
    Temps 1). Si l'edge function est déployée avant le backfill, les nouveaux
@@ -58,5 +66,41 @@ Ordre d'exécution **impératif** :
    créeront des doublons artificiels.
 
 Pré-requis env vars pour le script :
+
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY` (bypasse RLS pour UPDATE en masse)
+
+---
+
+## Migration 026 — pg_trgm + pending_product_matches (Fix audit C4 Temps 2)
+
+Pas de backfill nécessaire (la table `pending_product_matches` est vide à
+la création, les pending_matches futurs seront créés au fur et à mesure
+des nouveaux scans).
+
+Procédure :
+
+1. Appliquer `026_pg_trgm_pending_matches.sql` dans Supabase SQL Editor.
+   La migration active `pg_trgm`, crée l'index trigram GIN, ajoute la
+   colonne `invoice_items.pending_match` et crée la table `pending_product_matches`
+   avec RLS.
+2. Vérifier post-migration :
+
+   ```sql
+   select extname from pg_extension where extname = 'pg_trgm';
+   -- → 1 row
+   select count(*) from public.pending_product_matches;
+   -- → 0
+   select column_name from information_schema.columns
+    where table_name = 'invoice_items' and column_name = 'pending_match';
+   -- → 1 row
+   ```
+
+3. Déployer l'edge function modifiée. Les nouveaux scans dont les libellés
+   ressemblent à des produits existants généreront des rows pending_product_matches.
+
+**UI complète** : à concevoir dans un cycle dédié, brief dans
+[`docs/ui-todo-pending-matches.md`](./ui-todo-pending-matches.md). En attendant,
+la V1 affiche un compteur informatif sur la page détail facture
+(`X produits ressemblent à un existant — en attente de validation`) sans
+permettre l'interaction.
