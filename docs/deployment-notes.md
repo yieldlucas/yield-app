@@ -498,3 +498,21 @@ Suite à exécuter au moment de l'immatriculation :
 - Suppression `NEXT_PUBLIC_LEGAL_DRAFT` + redéploiement : 5 min
 
 Consentement explicite (sprint dédié avant premier encaissement) : **1.5-2 heures**.
+
+---
+
+## Validation terrain — Tests post-déploiement
+
+Avant le passage en mode payant (premier encaissement Stripe live), exécuter
+le protocole de tests end-to-end documenté dans
+[`./qa-checklist.md`](./qa-checklist.md).
+
+Ce protocole guide Lucas pas-à-pas sur 15-20 BL réels collectés auprès des
+15 ambassadeurs du Gers et couvre tous les fix critiques de l'audit
+(C1, C3, C4 Temps 1, C4 Temps 2, C5, C6) plus une batterie de tests
+transverses (OCR difficile, multi-pages, manuscrit, coupure réseau,
+déduplication, suppression) et de tests UI/UX.
+
+Le document est conçu pour être imprimé et utilisé en cuisine. Une fiche
+de relevé est prévue par BL testé, et la synthèse finale produit la liste
+exhaustive des bugs à corriger avant le go-live commercial.
