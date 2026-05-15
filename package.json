@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.54.0",
     "@react-email/components": "^1.0.12",
     "@react-pdf/renderer": "^4.5.1",
+    "@sentry/nextjs": "^10.53.1",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
     "framer-motion": "^11.11.11",
