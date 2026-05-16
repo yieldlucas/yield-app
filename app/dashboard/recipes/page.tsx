@@ -151,9 +151,10 @@ function HealthStrip({ counts }: { counts: { all: number; critical: number; warn
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       className="grid grid-cols-3 gap-2 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm"
     >
-      <Stat tone="text-rose-600" label="Critiques" value={counts.critical} hint="< 70%" />
-      <Stat tone="text-amber-600" label="À surveiller" value={counts.warning} hint="70–75%" />
-      <Stat tone="text-emerald-600" label="Saines" value={counts.ok} hint="≥ 75%" />
+      {/* Fix audit C3 — hints alignés sur les seuils en vigueur (migration 023 + JS) */}
+      <Stat tone="text-rose-600" label="Critiques" value={counts.critical} hint="< 55%" />
+      <Stat tone="text-amber-600" label="À surveiller" value={counts.warning} hint="55–65%" />
+      <Stat tone="text-emerald-600" label="Saines" value={counts.ok} hint="≥ 65%" />
     </motion.div>
   );
 }

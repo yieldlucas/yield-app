@@ -1383,7 +1383,9 @@ function Footer() {
           <span>Par des chefs, pour des chefs</span>
         </div>
         <div className="flex gap-6">
-          <a href="/terms" className="hover:text-slate-700 transition-colors">CGU</a>
+          {/* Fix audit R3 — ajout du lien /legal (mentions légales LCEN) */}
+          <a href="/legal" className="hover:text-slate-700 transition-colors">Mentions légales</a>
+          <a href="/terms" className="hover:text-slate-700 transition-colors">CGU/CGV</a>
           <a href="/privacy" className="hover:text-slate-700 transition-colors">Confidentialité</a>
           <a href="mailto:chef@yieldapp.fr" className="hover:text-slate-700 transition-colors">Contact</a>
         </div>

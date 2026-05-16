@@ -12,6 +12,26 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.54.0";
 // vraies hausses fournisseur sans noyer le chef.
 const PRICE_ALERT_THRESHOLD_PCT = 7;
 
+// Fix audit C6 — garde-fou anti-hallucination IA sur les prix extraits
+const SANITY_PRICE_RANGE = { min: 0.01, max: 1000 } as const;
+
+// Fix audit C4 — borne haute sur la longueur d'un raw_label avant normalisation.
+// Une hallucination IA qui retourne un libellé de 3000 chars est un signal fort
+// d'anomalie OCR : on tronque ET on flag needs_review pour empêcher la pollution
+// de la base produits avec une normalisation absurde.
+const MAX_LABEL_LENGTH = 500;
+
+// Fix audit C4 (Temps 2) — seuil de similarité trigram en dessous duquel on
+// considère qu'un candidat n'est pas suffisamment proche pour proposer un
+// quasi-match. 0.85 = compromis empirique (le brief produit). À ajuster selon
+// les retours ambassadeurs (trop strict = pending_matches ratés, trop lâche
+// = pendings spamés).
+const SIMILARITY_THRESHOLD = 0.85;
+
+// Fix audit C4 (Temps 2) — nombre max de candidats retournés par recherche.
+// 5 = compromis UX (assez pour donner du choix, pas trop pour ne pas noyer).
+const MAX_CANDIDATES = 5;
+
 // CORS restreint à la prod (le edge est appelé server-to-server depuis
 // /api/invoices/process, donc cross-origin browser est inutile en pratique).
 const ALLOWED_ORIGIN = "https://www.yieldapp.fr";
@@ -32,6 +52,9 @@ interface ExtractedItem {
   total_price_ht: number;
   vat_rate: number;
   needs_review?: boolean;
+  // Fix audit C6 — raisons cumulées du flag needs_review, séparées par "|"
+  // (ex: "drift_mismatch", "price_out_of_range", "drift_mismatch|price_out_of_range")
+  review_reason?: string;
 }
 
 interface ExtractedInvoice {
@@ -159,13 +182,27 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
     const drift = total_price_ht > 0
       ? Math.abs(expected - total_price_ht) / total_price_ht
       : 0;
+
+    // Fix audit C6 — cumul des raisons de flag dans un array temporaire, puis
+    // sérialisation en string "|"-séparée pour rester compatible avec le typage
+    // existant (review_reason?: string) sans introduire de structure plus lourde.
+    // TODO audit: l'UI ne gère pas encore l'affichage des items needs_review —
+    // à traiter dans un fix UX séparé (afficher les lignes à valider dans la
+    // page détail facture, permettre au chef de corriger ou rejeter).
+    const reasons: string[] = [];
+    if (drift > 0.05) reasons.push("drift_mismatch");
+    if (unit_price_ht < SANITY_PRICE_RANGE.min || unit_price_ht > SANITY_PRICE_RANGE.max) {
+      reasons.push("price_out_of_range");
+    }
+
     return {
       ...item,
       quantity,
       unit_price_ht,
       total_price_ht,
       vat_rate: Number(item.vat_rate) ?? 5.5,
-      needs_review: drift > 0.05,
+      needs_review: reasons.length > 0,
+      review_reason: reasons.length > 0 ? reasons.join("|") : undefined,
     };
   });
 
@@ -308,12 +345,62 @@ async function upsertSupplier(
   return data.id;
 }
 
+// Fix audit C4 — recherche par name_normalized pour éviter les doublons dus
+// aux variations de casse/espaces/ponctuation dans les libellés OCR.
+// Retour null si le libellé est vide après normalisation (item flag needs_review
+// + caller skip via "if (!result) continue"). Voir docs/deployment-notes.md
+// pour la procédure de déploiement (migration 025 + backfill avant déploiement).
+//
+// Fix audit C4 (Temps 2) — retour étendu pour les quasi-matches : si aucun
+// match exact et qu'on trouve des candidats similaires (similarité >= 0.85),
+// on retourne { pendingMatch: true, candidates, normalizedLabel } et le caller
+// insère une row pending_product_matches + une row invoice_items avec
+// product_id=NULL et pending_match=true (la ligne du BL reste comptée dans
+// total_ht facture mais pas de price_history ni d'alerte tant que pas résolue
+// par le chef côté UI). reference_code reste prioritaire : si présent, on
+// shortcut la phase quasi-match (le SKU fournisseur est plus fiable).
+type UpsertProductResult =
+  | { productId: string; wasCreated: boolean }
+  | { pendingMatch: true; candidates: Array<{ product_id: string; name: string; similarity: number }>; normalizedLabel: string };
+
 async function upsertProduct(
   sb: SupabaseClient,
   restaurantId: string,
   supplierId: string,
   item: ExtractedItem
-): Promise<{ productId: string; wasCreated: boolean }> {
+): Promise<UpsertProductResult | null> {
+  // Fix audit C4 — tronquer les labels aberrants AVANT toute autre opération
+  // pour empêcher la pollution de la base produits avec une normalisation absurde.
+  if (item.raw_label && item.raw_label.length > MAX_LABEL_LENGTH) {
+    console.warn("[audit-fix C4] raw_label truncated", {
+      original_length: item.raw_label.length,
+      truncated_to: MAX_LABEL_LENGTH,
+      preview: item.raw_label.slice(0, 80),
+    });
+    item.raw_label = item.raw_label.slice(0, MAX_LABEL_LENGTH);
+    appendReviewReason(item, "label_too_long");
+  }
+
+  const normalizedLabel = normalizeProductLabel(item.raw_label);
+
+  // Fix audit C4 — label vide après normalisation : on ne peut rien identifier,
+  // on skip l'item proprement (le caller ignore le retour null et continue).
+  // Trade-off : la ligne disparaît du total_ht facture. Acceptable car un
+  // label vide indique une erreur OCR amont (cf log warn ci-dessous + needs_review).
+  if (normalizedLabel === "") {
+    console.warn("[audit-fix C4] Skip product upsert — empty normalized label", {
+      raw_label: item.raw_label,
+    });
+    appendReviewReason(item, "empty_label");
+    return null;
+  }
+
+  // Priorité 1 : match par reference_code (le plus fiable, c'est le SKU/EAN
+  // du fournisseur). Si présent, on shortcut la recherche par name_normalized.
+  // Priorité 2 : match par (name_normalized, unit) — Fix audit C4. Le filtre
+  // sur unit est crucial : "Tomate grappe" en "kg" et "Tomate grappe" en "piece"
+  // sont 2 articles distincts qui ne doivent PAS partager d'historique de prix
+  // (sinon le calcul d'impact marge Fix C1 mélangerait kg et pièces).
   const query = item.reference_code
     ? sb
         .from("products")
@@ -325,11 +412,30 @@ async function upsertProduct(
         .from("products")
         .select("id")
         .eq("restaurant_id", restaurantId)
-        .ilike("name", item.raw_label)
+        .eq("name_normalized", normalizedLabel)
+        .eq("unit", item.unit)
         .maybeSingle();
 
   const { data: existing } = await query;
   if (existing) return { productId: existing.id, wasCreated: false };
+
+  // Fix audit C4 (Temps 2) — pas de match exact : on cherche des quasi-matches
+  // avant de créer un nouveau produit. Si reference_code est présent, on SHUNTE
+  // cette phase : un SKU fournisseur est plus fiable que la similarité de libellé,
+  // un nouveau code = vraiment un nouveau produit.
+  if (!item.reference_code) {
+    const candidates = await findSimilarProducts(sb, restaurantId, normalizedLabel, item.unit);
+    if (candidates.length > 0) {
+      console.warn("[audit-fix C4 T2] pending_match candidates found", {
+        raw_label: item.raw_label,
+        normalized: normalizedLabel,
+        unit: item.unit,
+        top_candidate: candidates[0],
+        count: candidates.length,
+      });
+      return { pendingMatch: true, candidates, normalizedLabel };
+    }
+  }
 
   const { data, error } = await sb
     .from("products")
@@ -337,6 +443,7 @@ async function upsertProduct(
       restaurant_id: restaurantId,
       supplier_id: supplierId,
       name: item.raw_label,
+      name_normalized: normalizedLabel,
       unit: item.unit,
       reference_code: item.reference_code ?? null,
     })
@@ -347,14 +454,156 @@ async function upsertProduct(
   return { productId: data.id, wasCreated: true };
 }
 
+/**
+ * Fix audit C4 — normalise un libellé produit OCR pour matcher les variations
+ * de casse, espaces, accents, ligatures et ponctuation. La même fonction est
+ * dupliquée dans scripts/backfill-product-names.ts (Node) pour le backfill
+ * des produits pré-migration. Toute modif ici doit être synchronisée là-bas.
+ *
+ * Étapes appliquées dans l'ordre :
+ *   1. Retour "" si input null/undefined/vide (caller doit gérer ce cas).
+ *   2. Cap à MAX_LABEL_LENGTH chars (anti-hallucination IA).
+ *   3. toLowerCase + NFD pour décomposer les accents combinables.
+ *   4. Retrait des diacritiques combinants (̀-ͯ).
+ *   5. Mapping explicite des ligatures œ→oe et æ→ae (NFD ne décompose PAS ces
+ *      caractères qui sont des entrées Unicode atomiques, pas des compositions).
+ *   6. Séparation des chiffres collés aux unités courantes : "4kg" → "4 kg".
+ *      Ordre des alternances : multi-caractères avant simples (ml avant l, etc.)
+ *      pour ne pas matcher partiellement.
+ *   7. Ponctuation parasite → espace.
+ *   8. Espaces multiples → simple.
+ *   9. Trim.
+ *
+ * Exemples (doc vivante — à préserver lors de toute modification) :
+ *   "TOMATE GRAPPE 4KG"    → "tomate grappe 4 kg"
+ *   "Tomate grappe 4 kg"   → "tomate grappe 4 kg"
+ *   "TOMATES, BIO - 1KG"   → "tomates bio 1 kg"
+ *   "Œufs Bio - Lot de 6"  → "oeufs bio lot de 6"
+ *   "500ml"                → "500 ml"   (pas "500m l", ordre alternance OK)
+ *   "1.5L"                 → "1.5 l"
+ *   ""                     → ""         (caller doit flag needs_review)
+ */
+function normalizeProductLabel(rawLabel: string | null | undefined): string {
+  if (!rawLabel) return "";
+  const capped = rawLabel.length > MAX_LABEL_LENGTH ? rawLabel.slice(0, MAX_LABEL_LENGTH) : rawLabel;
+  if (capped.trim() === "") return "";
+  return capped
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/œ/g, "oe")
+    .replace(/æ/g, "ae")
+    .replace(/(\d)(ml|cl|kg|l|g|pc|piece)\b/gi, "$1 $2")
+    .replace(/[,\-_;:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Fix audit C4 — ajoute une raison au flag needs_review d'un item, en
+// concaténant avec "|" si une raison était déjà présente (cumul avec Fix C6).
+function appendReviewReason(item: ExtractedItem, reason: string): void {
+  item.needs_review = true;
+  item.review_reason = item.review_reason ? `${item.review_reason}|${reason}` : reason;
+}
+
+/**
+ * Fix audit C4 (Temps 2) — recherche des produits du restaurant dont le
+ * name_normalized est similaire au libellé entrant via pg_trgm. Utilisé
+ * quand le match exact a échoué (donc on s'apprête à créer un nouveau
+ * produit) pour proposer au chef des candidats avant la création.
+ *
+ * Cette recherche est appelée pour tout item ayant un raw_label exploitable
+ * (non vide), indépendamment des flags needs_review (drift_mismatch,
+ * price_out_of_range, label_too_long). La résolution du pending_match
+ * côté UI ne lève pas automatiquement les autres flags needs_review.
+ *
+ * V1 (cette mission) : chaque variante orthographique génère un pending_match.
+ * V2 envisagée (post-mission) : table product_aliases pour mémoriser les
+ * résolutions afin qu'une seconde rencontre du même variant matche directement.
+ *
+ * Filtre par unit : on ne propose pas un candidat en "piece" si l'item entrant
+ * est en "kg" (cohérent avec le filtre du match exact, Temps 1).
+ *
+ * Implémentation : la fonction similarity() de pg_trgm n'est pas directement
+ * appelable via le query builder Supabase JS (.eq/.gte sur fonction). On
+ * passe par une RPC SQL ad-hoc ou un .rpc(). Plus simple ici : utiliser
+ * .filter() avec l'opérateur "%" + tri client-side sur le score. Limit côté
+ * DB pour ne pas ramener toute la base produit.
+ */
+async function findSimilarProducts(
+  sb: SupabaseClient,
+  restaurantId: string,
+  normalizedLabel: string,
+  unit: string,
+): Promise<Array<{ product_id: string; name: string; similarity: number }>> {
+  // pg_trgm opérateur `%` : true si similarité >= pg_trgm.similarity_threshold
+  // (défaut 0.3). On utilisera .filter("name_normalized", "fts", ...) ? Non,
+  // PostgREST n'expose pas directement `%`. La voie sûre est une RPC.
+  // Pour rester dans le pattern du fichier (pas de RPC SQL), on fetch les
+  // candidats avec un préfixe similaire via ilike puis on calcule la similarité
+  // côté JS. Acceptable au volume actuel (~200 produits/restaurant).
+  // Note : si volume grandit, switcher vers une RPC qui exploite l'index GIN.
+  const { data: candidates } = await sb
+    .from("products")
+    .select("id, name, name_normalized")
+    .eq("restaurant_id", restaurantId)
+    .eq("unit", unit)
+    .not("name_normalized", "is", null)
+    .limit(200);
+
+  if (!candidates || candidates.length === 0) return [];
+
+  // Similarité Jaccard sur trigrammes — proche pratiquement du score pg_trgm
+  // similarity() (qui utilise un Jaccard sur ngrams=3 lui aussi).
+  const sourceGrams = trigrams(normalizedLabel);
+  const scored = candidates
+    .map((c: { id: string; name: string; name_normalized: string | null }) => {
+      const targetGrams = trigrams(c.name_normalized ?? "");
+      return { product_id: c.id, name: c.name, similarity: jaccard(sourceGrams, targetGrams) };
+    })
+    .filter((c: { similarity: number }) => c.similarity >= SIMILARITY_THRESHOLD)
+    .sort((a: { similarity: number }, b: { similarity: number }) => b.similarity - a.similarity)
+    .slice(0, MAX_CANDIDATES);
+
+  return scored;
+}
+
+// Fix audit C4 (Temps 2) — génération de trigrammes (n=3) pour la similarité.
+// Pad avec 2 espaces de chaque côté comme pg_trgm pour bien capter les bords
+// du mot ("tomate" → "  t", " to", "tom", ..., "te ", "e  ").
+function trigrams(s: string): Set<string> {
+  const padded = `  ${s}  `;
+  const set = new Set<string>();
+  for (let i = 0; i <= padded.length - 3; i++) {
+    set.add(padded.slice(i, i + 3));
+  }
+  return set;
+}
+
+// Fix audit C4 (Temps 2) — coefficient de Jaccard sur 2 ensembles de trigrammes.
+// |intersection| / |union|. Retour 0 si l'un des deux est vide.
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const g of a) if (b.has(g)) inter++;
+  return inter / (a.size + b.size - inter);
+}
+
+// Fix audit C5 — comparaison par couple (product_id, supplier_id) pour éviter
+// les fausses alertes inter-fournisseurs (ex : tomate Metro 2€/kg → Promocash 3€/kg).
+// Retour null si premier achat de ce produit chez ce fournisseur : aucune
+// variation à signaler, la garde existante "if (previousPrice === null) continue"
+// (ligne ~589) gère naturellement ce cas en n'émettant pas d'alerte.
 async function getLastPrice(
   sb: SupabaseClient,
-  productId: string
+  productId: string,
+  supplierId: string,
 ): Promise<number | null> {
   const { data } = await sb
     .from("price_history")
     .select("price_ht")
     .eq("product_id", productId)
+    .eq("supplier_id", supplierId)
     .order("recorded_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -362,30 +611,100 @@ async function getLastPrice(
   return data?.price_ht ?? null;
 }
 
+/**
+ * Fix audit C1 — helper local Deno pour la conversion d'unité entre l'unité
+ * de la recette et l'unité du produit, avec contrat STRICT sur l'incompatibilité.
+ *
+ * Pourquoi ce helper existe en parallèle des deux autres implémentations :
+ *   - public.unit_conversion_factor(text, text) SQL (migration 014) → retourne 1
+ *     sur unités incompatibles (fallback silencieux). Inutilisable pour C1 où
+ *     on doit DÉTECTER l'incompatibilité pour skip + warn (mieux vaut absence
+ *     d'alerte que fausse alerte d'impact marge).
+ *   - unitConversionFactor() JS dans app/dashboard/_lib/recipes-data.ts →
+ *     idem fallback silencieux à 1, et inaccessible depuis l'edge Deno (isolé).
+ *
+ * Ce helper retourne null en cas d'incompatibilité (suffixe "Strict" pour
+ * marquer la divergence de contrat). Couvre les mêmes familles métier que
+ * la SQL (kg↔g, l↔cl↔ml, même unité). Toute fusion future doit explicitement
+ * choisir une sémantique unique pour les trois implémentations.
+ */
+function getUnitConversionFactorStrict(
+  fromUnit: string | null | undefined,
+  toUnit: string | null | undefined,
+): number | null {
+  if (!fromUnit || !toUnit || fromUnit.trim() === "" || toUnit.trim() === "") {
+    return null;
+  }
+  const f = fromUnit.trim().toLowerCase();
+  const t = toUnit.trim().toLowerCase();
+  if (f === t) return 1;
+  // Famille masse — facteur exprimé en kg.
+  const massMap: Record<string, number> = { g: 0.001, kg: 1 };
+  if (massMap[f] !== undefined && massMap[t] !== undefined) return massMap[f] / massMap[t];
+  // Famille volume — facteur exprimé en L.
+  const volMap: Record<string, number> = { ml: 0.001, cl: 0.01, l: 1 };
+  if (volMap[f] !== undefined && volMap[t] !== undefined) return volMap[f] / volMap[t];
+  // Familles incompatibles (ex: "piece" vs "kg") ou unités inconnues.
+  return null;
+}
+
+// Fix audit C1 — invoiceId ajouté à la signature pour pouvoir logger les skips
+// d'unités incompatibles avec le contexte facture (debug en logs Supabase).
 async function getAffectedRecipes(
   sb: SupabaseClient,
+  invoiceId: string,
   productId: string,
   oldPrice: number,
   newPrice: number
 ): Promise<AffectedRecipe[]> {
+  // Fix audit C1 — sélection ajoutée de quantity_unit et product_unit
+  // (migration 014) pour appliquer la conversion d'unité dans le calcul d'impact.
   const { data: usages } = await sb
     .from("recipe_ingredients")
-    .select(`quantity, recipe:recipes(id, name, selling_price, vat_rate)`)
+    .select(`quantity, quantity_unit, product_unit, recipe:recipes(id, name, selling_price, vat_rate)`)
     .eq("product_id", productId);
 
   if (!usages?.length) return [];
 
+  // Fix audit C1 — application de la conversion d'unité avant calcul d'impact marge
+  // Sans ça, une recette en "g" avec un produit au "kg" produisait un extraCost
+  // multiplié par 1000 (bug critique remonté à l'audit).
+  //
+  // Scénarios de validation :
+  // 1. Recette 200g de farine, produit au kg, hausse 1€/kg → impact attendu : 0.20€
+  // 2. Recette 50cl d'huile, produit au L, hausse 2€/L → impact attendu : 1.00€
+  // 3. Recette 1 pièce de saumon, produit à la pièce, hausse 3€/pièce → impact attendu : 3.00€
+  // 4. Unités incompatibles (piece vs kg, sans pack_size) → skip + warn, AUCUNE alerte chiffrée fausse.
   return usages
     .filter((u: { recipe: unknown }) => u.recipe)
-    .map((u: { quantity: number; recipe: { id: string; name: string; selling_price: number; vat_rate: number } }) => {
+    .map((u: {
+      quantity: number;
+      quantity_unit: string | null;
+      product_unit: string | null;
+      recipe: { id: string; name: string; selling_price: number; vat_rate: number };
+    }) => {
       const recipe = u.recipe;
+      const factor = getUnitConversionFactorStrict(u.quantity_unit, u.product_unit);
+      if (factor === null) {
+        console.warn("[audit-fix C1] Skip recipe impact — incompatible units", {
+          invoice_id: invoiceId,
+          recipe_id: recipe.id,
+          recipe_name: recipe.name,
+          product_id: productId,
+          quantity: u.quantity,
+          quantity_unit: u.quantity_unit,
+          product_unit: u.product_unit,
+        });
+        return null;
+      }
       const sellingPriceHt = recipe.selling_price / (1 + recipe.vat_rate / 100);
-      const extraCost = (newPrice - oldPrice) * u.quantity;
+      const extraCost = (newPrice - oldPrice) * u.quantity * factor;
       const impactPts = sellingPriceHt > 0
         ? Math.round((extraCost / sellingPriceHt) * 10000) / 100
         : 0;
       return { id: recipe.id, name: recipe.name, margin_impact_pts: impactPts };
-    });
+    })
+    .filter((r: AffectedRecipe | null): r is AffectedRecipe => r !== null);
 }
 
 // ─── Main pipeline ────────────────────────────────────────
@@ -448,24 +767,95 @@ async function processInvoice(
   }[] = [];
 
   for (const item of extracted.items) {
-    const { productId, wasCreated } = await upsertProduct(
-      sb, restaurantId, supplierId, item
-    );
+    // Fix audit C4 — upsertProduct peut retourner :
+    //   - null : libellé vide après normalisation → skip total de l'item,
+    //     pas de row invoice_items (cf flag empty_label). DIFFÉRENT du cas
+    //     pending_match ci-dessous : ici on n'a aucun raw_label exploitable,
+    //     même pas pour identifier visuellement la ligne au chef.
+    //   - { pendingMatch: true, candidates, normalizedLabel } : quasi-match
+    //     détecté → on crée la row invoice_items avec product_id=NULL et
+    //     pending_match=true (la ligne reste dans total_ht facture, comptée
+    //     comme une ligne réelle), + une row pending_product_matches qui
+    //     liste les candidats pour la résolution future côté UI.
+    //   - { productId, wasCreated } : flow standard.
+    const upsertResult = await upsertProduct(sb, restaurantId, supplierId, item);
+    if (!upsertResult) continue;
+
+    // Fix audit C4 (Temps 2) — branche pending_match : on insère une row
+    // invoice_items minimale (product_id NULL, pending_match true) et une
+    // row pending_product_matches. Pas de price_history, pas d'alerte tant
+    // que le chef n'a pas résolu via l'UI (cf docs/ui-todo-pending-matches.md).
+    if ("pendingMatch" in upsertResult) {
+      const { data: itemRow, error: itemErr } = await sb
+        .from("invoice_items")
+        .insert({
+          invoice_id: invoiceId,
+          product_id: null,
+          raw_label: item.raw_label,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price_ht: item.unit_price_ht,
+          total_price_ht: item.total_price_ht,
+          vat_rate: item.vat_rate,
+          matched: false,
+          pending_match: true,
+          original_unit_price: item.unit_price_ht,
+          original_quantity: item.quantity,
+        })
+        .select("id")
+        .single();
+
+      if (itemErr || !itemRow) {
+        console.error("[audit-fix C4 T2] failed to insert pending invoice_item", {
+          invoice_id: invoiceId,
+          raw_label: item.raw_label,
+          error: itemErr?.message,
+        });
+        continue;
+      }
+
+      const { error: pendingErr } = await sb
+        .from("pending_product_matches")
+        .insert({
+          restaurant_id: restaurantId,
+          invoice_id: invoiceId,
+          invoice_item_id: itemRow.id,
+          raw_label: item.raw_label,
+          normalized_label: upsertResult.normalizedLabel,
+          unit: item.unit,
+          candidate_product_ids: upsertResult.candidates,
+        });
+
+      if (pendingErr) {
+        console.error("[audit-fix C4 T2] failed to insert pending_product_matches", {
+          invoice_id: invoiceId,
+          invoice_item_id: itemRow.id,
+          error: pendingErr.message,
+        });
+      }
+      // Skip price_history + alerting pour cet item (pas de product_id résolu).
+      continue;
+    }
+
+    const { productId, wasCreated } = upsertResult;
     wasCreated ? itemsCreated++ : itemsMatched++;
 
     // Capture le dernier prix AVANT d'insérer le nouveau (sinon getLastPrice
     // renverrait celui qu'on est en train d'écrire).
-    const previousPrice = await getLastPrice(sb, productId);
+    // Fix audit C5 — supplierId ajouté pour comparaison par couple (product, supplier)
+    const previousPrice = await getLastPrice(sb, productId, supplierId);
     matchingResults.push({ productId, item, previousPrice });
 
     // Lignes flaggées needs_review : on garde la trace dans invoice_items
     // (matched=false) mais on n'écrit PAS dans price_history — un prix
     // incohérent fausserait l'historique à vie.
     if (!item.needs_review) {
+      // Fix audit C5 — supplier_id ajouté pour permettre comparaison par couple produit/fournisseur
       await sb.from("price_history").insert({
         product_id: productId,
         price_ht: item.unit_price_ht,
         invoice_id: invoiceId,
+        supplier_id: supplierId,
         source: "invoice",
       });
     }
@@ -497,8 +887,9 @@ async function processInvoice(
     const changePct = ((r.item.unit_price_ht - r.previousPrice) / r.previousPrice) * 100;
     if (Math.abs(changePct) < PRICE_ALERT_THRESHOLD_PCT) continue;
 
+    // Fix audit C1 — invoiceId passé au helper pour les logs d'unités incompatibles
     const affectedRecipes = await getAffectedRecipes(
-      sb, r.productId, r.previousPrice, r.item.unit_price_ht
+      sb, invoiceId, r.productId, r.previousPrice, r.item.unit_price_ht
     );
 
     await sb.from("margin_alerts").insert({
@@ -753,6 +1144,19 @@ serve(async (req: Request) => {
       await markInvoiceError(sb, invoice_id, failureMessage);
       if (restaurant_id) await releaseQuotaSlot(sb, restaurant_id);
       return json({ error: failureMessage, details: String(err) }, 422);
+    }
+
+    // Fix audit C6 — log des items dont le prix tombe hors range raisonnable
+    // (visible dans les logs Supabase Edge même tant que l'UI ne montre rien)
+    for (const flaggedItem of extracted.items) {
+      if (flaggedItem.review_reason?.includes("price_out_of_range")) {
+        console.warn("[process-invoice] price_out_of_range", {
+          invoice_id,
+          raw_label: flaggedItem.raw_label,
+          unit_price_ht: flaggedItem.unit_price_ht,
+          review_reason: flaggedItem.review_reason,
+        });
+      }
     }
 
     // Pipeline complet

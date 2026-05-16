@@ -38,6 +38,9 @@ type ItemRow = {
   total_price_ht: number;
   vat_rate: number | null;
   matched: boolean;
+  // Fix audit C4 (Temps 2) — true si product_id non encore résolu, item en
+  // attente de validation chef. Voir migration 026 et pending_product_matches.
+  pending_match: boolean;
   original_unit_price: number | null;
   original_quantity: number | null;
   corrected_at: string | null;
@@ -123,7 +126,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           .from("invoice_items")
           .select(`
             id, product_id, raw_label, quantity, unit, unit_price_ht, total_price_ht,
-            vat_rate, matched, original_unit_price, original_quantity, corrected_at
+            vat_rate, matched, pending_match, original_unit_price, original_quantity, corrected_at
           `)
           .eq("invoice_id", invoiceId);
         if (itemsErr) throw itemsErr;
@@ -423,6 +426,33 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
                 : "—"}
             </span>
           </div>
+
+          {/* Fix audit C4 (Temps 2) — bandeau informatif si des items sont en
+              pending_match (produit ressemblant à un existant, en attente de
+              validation chef). UI minimale V1 : compteur uniquement, pas
+              d'interaction. UI complète (boutons "C'est le même" / "Créer un
+              nouveau") spec dans docs/ui-todo-pending-matches.md, à livrer
+              dans un cycle dédié après les premiers retours ambassadeurs.
+              TODO audit C4 — UI validation des pending_matches : voir docs/ui-todo-pending-matches.md */}
+          {(() => {
+            const pendingCount = items.filter(it => it.pending_match).length;
+            if (pendingCount === 0) return null;
+            return (
+              <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 mb-3 flex items-start gap-3">
+                <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-amber-900 text-sm font-semibold">
+                    {pendingCount} produit{pendingCount > 1 ? "s" : ""} ressemble{pendingCount > 1 ? "nt" : ""} à un existant — en attente de validation
+                  </p>
+                  <p className="text-amber-700 text-xs mt-0.5 leading-relaxed">
+                    Ces lignes sont comptées dans le total de la facture mais
+                    n&apos;alimentent pas encore l&apos;historique des prix ni les
+                    alertes. L&apos;interface de validation arrive prochainement.
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Items table */}
           <div className="rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden">
