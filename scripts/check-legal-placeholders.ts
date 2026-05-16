@@ -1,14 +1,21 @@
 // [audit-fix R3] vérifie que les pages légales ne contiennent plus de
 // placeholder `[À COMPLÉTER : ...]` avant un déploiement production.
 //
-// Comportement :
-//   - NODE_ENV === "production" ET au moins 1 placeholder trouvé → exit 1
-//     (le build Vercel échoue, déploiement bloqué)
-//   - Sinon → warning console + exit 0 (dev / preview restent fonctionnels)
+// Comportement (4 cas) :
+//   - Aucun placeholder trouvé → succès silencieux (exit 0)
+//   - Placeholders + dev/preview (NODE_ENV != production) → warning + exit 0
+//   - Placeholders + production + NEXT_PUBLIC_LEGAL_DRAFT=true → warning
+//     explicite (mode draft, le bandeau LegalDraftBanner s'affiche côté
+//     front) + exit 0
+//   - Placeholders + production + pas en mode draft → erreur + exit 1
+//     (le build Vercel échoue, déploiement bloqué). Message indique les
+//     2 voies de déblocage : remplir les placeholders OU activer le mode
+//     draft via NEXT_PUBLIC_LEGAL_DRAFT.
 //
 // Branché en hook prebuild dans package.json. Pour vérifier manuellement :
 //   npm run check:legal
-//   NODE_ENV=production npm run check:legal   (simule le bloquage prod)
+//   NODE_ENV=production npm run check:legal                          (bloque)
+//   NODE_ENV=production NEXT_PUBLIC_LEGAL_DRAFT=true npm run check:legal  (passe)
 //
 // Pattern recherché : "[À COMPLÉTER :" (avec À accentué). Lecture explicite
 // UTF-8 pour la portabilité Linux/macOS. Fallback ASCII "[A COMPLETER :" pour
@@ -52,7 +59,11 @@ async function scanFile(path: string): Promise<Finding[]> {
 }
 
 async function main(): Promise<void> {
+  // Fix audit R3 — mode draft via env var : NEXT_PUBLIC_LEGAL_DRAFT=true
+  // autorise un déploiement production avec placeholders résiduels, à
+  // condition que le bandeau LegalDraftBanner s'affiche côté front.
   const isProduction = process.env.NODE_ENV === "production";
+  const isDraft = process.env.NEXT_PUBLIC_LEGAL_DRAFT === "true";
 
   const allFindings: Finding[] = [];
   for (const file of LEGAL_FILES) {
@@ -90,9 +101,21 @@ async function main(): Promise<void> {
     console.error("");
   }
 
+  // Fix audit R3 — mode draft via env var
+  if (isProduction && isDraft) {
+    console.warn("[check:legal] Mode draft (NEXT_PUBLIC_LEGAL_DRAFT=true) : build autorisé malgré les placeholders.");
+    console.warn("[check:legal]   Le bandeau LegalDraftBanner s'affichera sur /legal, /terms et /privacy.");
+    console.warn("[check:legal]   Une fois les placeholders remplis (post-réception SIRET), retirer la");
+    console.warn("[check:legal]   variable NEXT_PUBLIC_LEGAL_DRAFT des env vars Vercel pour repasser au");
+    console.warn("[check:legal]   contrôle strict. Voir docs/deployment-notes.md section \"Fix audit R3\".");
+    return;
+  }
+
   if (isProduction) {
     console.error("[check:legal] ✗ NODE_ENV=production : déploiement bloqué.");
-    console.error("[check:legal]   Remplacer les placeholders ci-dessus puis relancer le build.");
+    console.error("[check:legal]   Deux voies de déblocage :");
+    console.error("[check:legal]     1. Remplacer les placeholders ci-dessus puis relancer le build.");
+    console.error("[check:legal]     2. Passer NEXT_PUBLIC_LEGAL_DRAFT=true (mode draft, bandeau visible).");
     console.error("[check:legal]   Voir docs/deployment-notes.md section \"Fix audit R3\".");
     process.exit(1);
   }

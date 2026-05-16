@@ -439,7 +439,51 @@ Synthèse par valeur métier (un même placeholder peut apparaître plusieurs fo
 7. **Déployer** : le hook prebuild (`scripts/check-legal-placeholders.ts`)
    vérifie `NODE_ENV=production` ET absence de placeholders. Si placeholder
    résiduel + production → exit 1, build Vercel échoue avec liste des
-   placeholders concernés.
+   placeholders concernés. **Sauf** si `NEXT_PUBLIC_LEGAL_DRAFT=true` (cf
+   sous-section "Mode draft" ci-dessous).
+
+### Mode draft (avant réception SIRET)
+
+Tant que le SIRET n'est pas reçu, le hook prebuild bloquerait tout
+déploiement production puisque les placeholders `[À COMPLÉTER : ...]`
+restent visibles. Pour permettre le déploiement en attendant, on utilise
+la variable d'environnement `NEXT_PUBLIC_LEGAL_DRAFT`.
+
+1. **Positionner la variable sur Vercel** :
+   - Vercel Dashboard → Project Settings → Environment Variables
+   - Nom : `NEXT_PUBLIC_LEGAL_DRAFT`
+   - Valeur : `true`
+   - Cocher les 3 environnements : **Production**, **Preview**, **Development**
+   - Sauvegarder, puis redéclencher un déploiement
+
+2. **Comportement attendu une fois la variable active** :
+   - Le hook prebuild (`scripts/check-legal-placeholders.ts`) détecte le mode
+     draft et autorise le build production malgré les placeholders, avec un
+     warning explicite dans les logs Vercel.
+   - Côté front, le composant `<LegalDraftBanner />` (lit la même variable
+     `NEXT_PUBLIC_LEGAL_DRAFT`) affiche un bandeau ambre en haut des pages
+     `/legal`, `/terms` et `/privacy` : « ⚠️ Document en cours de finalisation
+     — Les valeurs définitives seront ajoutées dès l'immatriculation
+     officielle de l'entreprise. »
+   - Les visiteurs voient explicitement que le document est provisoire.
+
+3. **Procédure post-réception du SIRET** :
+   1. Remplacer les 14 placeholders métier listés plus haut dans cette
+      section (raison sociale, SIRET, capital, adresse, etc.) dans les
+      3 fichiers `app/legal/page.tsx`, `app/terms/page.tsx`,
+      `app/privacy/page.tsx`.
+   2. Lancer `npm run check:legal` en local. Doit afficher
+      `✓ Aucun placeholder résiduel dans les pages légales.`
+   3. Supprimer la variable `NEXT_PUBLIC_LEGAL_DRAFT` des env vars Vercel
+      (Production + Preview + Development).
+   4. Redéployer. Le hook prebuild revient en mode strict — tout
+      placeholder résiduel bloquera le build.
+
+Cette approche permet de mettre l'app en production AVANT la création
+formelle de l'entreprise (utile pour les démos commerciales aux 15
+ambassadeurs Gers et la collecte de leads via le lead magnet Pro), tout en
+étant transparent vis-à-vis des visiteurs sur le caractère provisoire des
+documents légaux.
 
 ### Architecture séparation /cgu et /cgv à terme
 
