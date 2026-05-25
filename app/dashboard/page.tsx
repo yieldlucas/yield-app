@@ -682,7 +682,6 @@ export default function DashboardPage() {
             les KPIs passifs. L'objectif est qu'un chef pressé voit d'abord
             "que peut-il faire" puis "où il en est". */}
         <DashboardHero
-          onScan={openCamera}
           onCreateRecipe={() => { setCalcSeed(null); setCalcOpen(true); }}
           recipesCount={recipesStats?.total ?? 0}
         />
@@ -773,6 +772,15 @@ export default function DashboardPage() {
       <input
         ref={galleryInputRef} type="file" multiple className="sr-only"
         accept="image/jpeg,image/png,image/webp,application/pdf"
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
+      />
+      {/* Input caméra déclenché par <label htmlFor> (tap direct), PAS par un
+          .click() JS. Sur Android, seul un tap direct sur un input `capture`
+          ouvre l'appareil photo ; le .click() programmatique échoue (rien) ou
+          tombe sur le sélecteur de fichiers. Un <label> fournit cette activation
+          de confiance. id ciblé par les boutons "Scanner" (cf DashboardHero). */}
+      <input
+        id="yield-camera-input" type="file" capture="environment" accept="image/*" className="sr-only"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
 
