@@ -14,6 +14,13 @@ export type FounderInfo = {
    *  > 0 = l'user est en "essai parrainé Starter Pro" : on doit masquer
    *  l'offre 14j et afficher son statut spécial. */
   trialExtraDays: number;
+  /** Timestamp du dismiss de la modale d'onboarding. NULL = jamais vue.
+   *  Persisté côté compte (migration 027) pour ne pas réapparaître sur un
+   *  autre appareil — contrairement à l'ancien flag localStorage. */
+  onboardingSeenAt: string | null;
+  /** Timestamp de la célébration "Premier scan validé". NULL = jamais fêté.
+   *  Persisté côté compte (migration 027), même logique que onboardingSeenAt. */
+  firstScanCelebratedAt: string | null;
 };
 
 /** Lit les infos fondateur du user courant. NULL partout si compte pré-migration
@@ -23,7 +30,7 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
   if (!session) return null;
   const { data, error } = await supabase
     .from("profiles")
-    .select("founder_number, founder_letter_seen_at, referral_code, referred_by_code, created_at, trial_extra_days")
+    .select("founder_number, founder_letter_seen_at, referral_code, referred_by_code, created_at, trial_extra_days, onboarding_seen_at, first_scan_celebrated_at")
     .eq("id", session.user.id)
     .maybeSingle();
   if (error || !data) return null;
@@ -34,6 +41,8 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
     referred_by_code: string | null;
     created_at: string | null;
     trial_extra_days: number | null;
+    onboarding_seen_at: string | null;
+    first_scan_celebrated_at: string | null;
   };
   return {
     founderNumber: row.founder_number,
@@ -42,6 +51,8 @@ export async function fetchFounderInfo(): Promise<FounderInfo | null> {
     referredByCode: row.referred_by_code,
     createdAt: row.created_at,
     trialExtraDays: Math.max(0, Number(row.trial_extra_days) || 0),
+    onboardingSeenAt: row.onboarding_seen_at,
+    firstScanCelebratedAt: row.first_scan_celebrated_at,
   };
 }
 
@@ -73,6 +84,32 @@ export async function markFounderLetterSeen(): Promise<boolean> {
   const { error } = await supabase
     .from("profiles")
     .update({ founder_letter_seen_at: new Date().toISOString() })
+    .eq("id", session.user.id);
+  return !error;
+}
+
+/** Marque l'onboarding (modale d'accueil) comme vu côté compte. Remplace
+ *  l'ancien flag localStorage `yield_onboarding_seen` qui réapparaissait sur
+ *  un autre appareil. Idempotent. */
+export async function markOnboardingSeen(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return false;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ onboarding_seen_at: new Date().toISOString() })
+    .eq("id", session.user.id);
+  return !error;
+}
+
+/** Marque la célébration "Premier scan validé" comme déjà affichée côté
+ *  compte. Remplace l'ancien flag localStorage `yield_first_scan_celebrated`.
+ *  Idempotent. */
+export async function markFirstScanCelebrated(): Promise<boolean> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return false;
+  const { error } = await supabase
+    .from("profiles")
+    .update({ first_scan_celebrated_at: new Date().toISOString() })
     .eq("id", session.user.id);
   return !error;
 }

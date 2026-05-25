@@ -1,16 +1,17 @@
 "use client";
 
 // Petit moment de joie quand le chef réussit son tout premier scan.
-// Un seul affichage à vie via localStorage — c'est un moment fondateur,
-// pas un toast qu'on voit toutes les semaines.
+// Un seul affichage à vie — c'est un moment fondateur, pas un toast qu'on voit
+// toutes les semaines.
 //
-// Déclenché par le caller quand `invoices.length` passe de 0 → 1.
+// La garantie "une seule fois à vie, sur tout appareil" est assurée par le
+// caller : il ne passe `show=true` que si profiles.first_scan_celebrated_at
+// est NULL, et persiste le timestamp dès le déclenchement. Le composant ne
+// fait donc que jouer l'animation puis s'auto-fermer.
 
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, Sparkles, X } from "lucide-react";
-
-const STORAGE_KEY = "yield_first_scan_celebrated";
 
 export function FirstScanCelebration({ show, onDismiss }: {
   show: boolean;
@@ -20,10 +21,7 @@ export function FirstScanCelebration({ show, onDismiss }: {
 
   useEffect(() => {
     if (!show) return;
-    if (typeof window === "undefined") return;
-    if (localStorage.getItem(STORAGE_KEY) === "1") return;
     setVisible(true);
-    localStorage.setItem(STORAGE_KEY, "1");
     // Auto-dismiss après 6s pour laisser le chef savourer sans devoir cliquer.
     const t = window.setTimeout(() => {
       setVisible(false);

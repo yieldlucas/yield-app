@@ -16,8 +16,8 @@ const NAME_MIN = 2;
 const NAME_MAX = 80;
 
 /**
- * Modal d'accueil affichée à la 1ère visite (flag localStorage
- * `yield_onboarding_seen`). Deux étapes :
+ * Modal d'accueil affichée à la 1ère visite (état serveur
+ * `profiles.onboarding_seen_at`, persisté au dismiss). Deux étapes :
  *
  *   Step 1 — Saisie du nom du restaurant. Persiste dans `profiles.restaurant_name`
  *            via le callback onSubmitName. Le nom apparaît ensuite dans l'en-tête

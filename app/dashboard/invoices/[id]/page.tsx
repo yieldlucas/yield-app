@@ -2,13 +2,15 @@
 
 import { useState, useEffect, use, useMemo } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle, ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check,
-  Pencil, ChevronDown, RotateCcw, Salad, Save,
+  Pencil, ChevronDown, RotateCcw, Salad, Save, Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
+import { deleteInvoice } from "@/app/dashboard/_lib/dashboard-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "@/app/dashboard/_components/FlashCalculator";
 import { PageSpinner } from "@/app/dashboard/_components/PageSpinner";
 
@@ -77,6 +79,7 @@ function variationStyle(pct: number | null): { tone: string; arrow: string } {
 
 export default function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: invoiceId } = use(params);
+  const router = useRouter();
   const [invoice, setInvoice] = useState<InvoiceFull | null>(null);
   const [items, setItems] = useState<ItemRow[]>([]);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -88,6 +91,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Suppression facture : modale de confirmation (action destructive,
+  // irréversible), spinner pendant l'appel et message d'erreur inline.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // FlashCalculator : ouvert depuis le bouton calculatrice d'une ligne
   // produit. Pré-rempli en injectant la ligne comme premier ingrédient — l'user
   // peut ensuite ajouter d'autres composants pour simuler une recette complète.
@@ -290,6 +298,24 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
     }
   };
 
+  // ── Suppression ───
+  // deleteInvoice supprime la ligne invoices (RLS owner) + le fichier Storage.
+  // Les invoice_items partent en cascade ; price_history / margin_alerts sont
+  // désolidarisés (ON DELETE SET NULL) — l'historique de prix est conservé.
+  // Succès → retour au dashboard (replace pour éviter un back vers une page morte).
+  const handleDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    const ok = await deleteInvoice(invoiceId);
+    if (!ok) {
+      setDeleting(false);
+      setDeleteError("La suppression a échoué. Vérifiez votre connexion et réessayez.");
+      return;
+    }
+    router.replace("/dashboard");
+  };
+
   // ── States UI ───
   if (loading) return <PageSpinner />;
   if (error || !invoice) {
@@ -380,6 +406,16 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
               )}
             </AnimatePresence>
           </div>
+
+          {/* Suppression facture — action destructive, confirmée par modale. */}
+          <button
+            onClick={() => { setActionsOpen(false); setDeleteError(null); setConfirmDelete(true); }}
+            className="w-9 h-9 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+            aria-label="Supprimer la facture"
+            title="Supprimer la facture"
+          >
+            <Trash2 size={16} />
+          </button>
         </div>
       </div>
 
@@ -699,6 +735,63 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={imageUrl} alt="Facture pleine taille" className="max-w-full max-h-full object-contain" onClick={e => e.stopPropagation()} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── Confirmation suppression ─── */}
+      <AnimatePresence>
+        {confirmDelete && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-5"
+            onClick={() => { if (!deleting) setConfirmDelete(false); }}
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 16 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 16 }}
+              className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-100 flex items-center justify-center mx-auto mb-4">
+                <Trash2 size={22} className="text-rose-500" />
+              </div>
+              <h3 className="text-slate-900 font-bold text-lg text-center mb-1.5">
+                Supprimer cette facture ?
+              </h3>
+              <p className="text-slate-500 text-sm text-center leading-relaxed mb-5">
+                La facture {invoice.supplier?.name ? <strong className="text-slate-700">{invoice.supplier.name}</strong> : "sélectionnée"}
+                {items.length > 0 ? ` et ses ${items.length} ligne${items.length > 1 ? "s" : ""}` : ""} ainsi
+                que la photo seront définitivement supprimées. Cette action est irréversible.
+              </p>
+              {deleteError && (
+                <p className="text-rose-500 text-xs text-center mb-3" role="alert">{deleteError}</p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {deleting ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Suppression…
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={14} /> Supprimer
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

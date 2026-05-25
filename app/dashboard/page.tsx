@@ -31,8 +31,8 @@ import { FounderLetter } from "./_components/FounderLetter";
 import { EasterEggModal } from "./_components/EasterEggModal";
 import { ReferralAppliedToast } from "./_components/ReferralAppliedToast";
 import {
-  fetchFounderInfo, markFounderLetterSeen, applyReferralCode,
-  ensureFounderMetadata, computeTrialDaysLeft, type FounderInfo,
+  fetchFounderInfo, markFounderLetterSeen, markOnboardingSeen, markFirstScanCelebrated,
+  applyReferralCode, ensureFounderMetadata, computeTrialDaysLeft, type FounderInfo,
 } from "./_lib/founder-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "./_components/FlashCalculator";
 import { fetchRecipesHealth } from "./_lib/recipes-data";
@@ -60,6 +60,10 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [invoices, setInvoices] = useState<RecentInvoice[]>([]);
   const [loading, setLoading] = useState(true);
+  // True dès que le 1er fetch des factures a répondu. Sert à décider de
+  // l'onboarding sans flash : on attend de connaître l'historique réel du
+  // compte avant d'afficher (ou non) la modale d'accueil.
+  const [invoicesLoaded, setInvoicesLoaded] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showTrial, setShowTrial] = useState(false);
   const [isSubscribed, setIsSubscribed] = useState(false);
@@ -107,8 +111,9 @@ export default function DashboardPage() {
   // gérée en localStorage côté ScanReminderBanner).
   const [reminderDismissed, setReminderDismissed] = useState(false);
   // Célébration premier scan : trigger une seule fois quand le count de
-  // factures processed passe de 0 à 1. Le toast lui-même gère sa
-  // persistance localStorage (jamais re-show).
+  // factures processed passe de 0 à 1. La persistance "jamais re-show" est
+  // gérée côté compte via profiles.first_scan_celebrated_at (cf l'effet de
+  // détection + markFirstScanCelebrated).
   const [celebrateFirstScan, setCelebrateFirstScan] = useState(false);
   // Ref pour détecter la transition 0→1+ sans piège de state update.
   const prevProcessedCountRef = useRef<number>(0);
@@ -133,8 +138,14 @@ export default function DashboardPage() {
   };
   const openGallery = () => galleryInputRef.current?.click();
   const dismissOnboarding = () => {
-    localStorage.setItem("yield_onboarding_seen", "1");
     setShowOnboarding(false);
+    // Persistance côté compte (migration 027) — l'onboarding ne réapparaîtra
+    // plus sur un autre appareil / après vidage du cache. Optimiste : on met à
+    // jour founderInfo localement pour que l'effet de décision ne re-déclenche pas.
+    void markOnboardingSeen();
+    setFounderInfo((prev) =>
+      prev ? { ...prev, onboardingSeenAt: new Date().toISOString() } : prev,
+    );
   };
   const dismissTrial = () => {
     localStorage.setItem("yield_trial_dismissed", "1");
@@ -238,6 +249,7 @@ export default function DashboardPage() {
   const reloadInvoices = async () => {
     const next = await fetchInvoices();
     setInvoices((prev) => (invoicesChanged(prev, next) ? next : prev));
+    setInvoicesLoaded(true);
   };
   const reloadAlerts = async () => setAlerts(await fetchAlerts());
   const reloadMonthlyStats = async () => setMonthlyStats(await fetchMonthlyStats());
@@ -400,16 +412,49 @@ export default function DashboardPage() {
     void runBatch(queued);
   };
 
-  // ─── Détection 1er scan : transition 0 → ≥1 facture processed ──
-  // Le composant FirstScanCelebration filtre lui-même via localStorage donc
-  // ne se montre qu'une seule fois à vie même si le ref se réactive.
+  // ─── Décision onboarding : pilotée par le serveur (profiles.onboarding_seen_at) ──
+  // Remplace l'ancien flag localStorage qui réapparaissait sur un autre
+  // appareil. On attend que founderInfo ET la liste des factures soient
+  // chargés pour décider sans flash.
   useEffect(() => {
+    if (!founderInfo || !invoicesLoaded) return;
+    if (founderInfo.onboardingSeenAt != null) return; // déjà vu (persisté compte)
+    // Filet de sécurité : compte déjà actif (a des factures) mais flag absent
+    // — typiquement un compte pré-migration 027 non couvert par le backfill.
+    // On considère l'onboarding fait et on soigne le compte côté serveur.
+    if (invoices.length > 0) {
+      setShowOnboarding(false);
+      void markOnboardingSeen();
+      setFounderInfo((prev) =>
+        prev ? { ...prev, onboardingSeenAt: new Date().toISOString() } : prev,
+      );
+      return;
+    }
+    setShowOnboarding(true);
+  }, [founderInfo, invoicesLoaded, invoices.length]);
+
+  // ─── Détection 1er scan : transition 0 → ≥1 facture processed ──
+  // Gating serveur (profiles.first_scan_celebrated_at) : la célébration ne se
+  // montre qu'une seule fois à vie, sur n'importe quel appareil. On persiste
+  // dès le déclenchement pour qu'un reload pendant les 6s ne la re-joue pas.
+  useEffect(() => {
+    if (!founderInfo) return; // on attend de connaître l'état serveur
     const processedCount = invoices.filter((i) => i.status === "processed").length;
+    if (founderInfo.firstScanCelebratedAt != null) {
+      // Déjà fêté → on synchronise le ref pour qu'une future transition (re-scan
+      // après suppression, etc.) ne re-déclenche pas.
+      prevProcessedCountRef.current = processedCount;
+      return;
+    }
     if (prevProcessedCountRef.current === 0 && processedCount >= 1) {
       setCelebrateFirstScan(true);
+      void markFirstScanCelebrated();
+      setFounderInfo((prev) =>
+        prev ? { ...prev, firstScanCelebratedAt: new Date().toISOString() } : prev,
+      );
     }
     prevProcessedCountRef.current = processedCount;
-  }, [invoices]);
+  }, [invoices, founderInfo]);
 
   // ─── Cleanup : flippe le signal d'annulation au démontage ──
   // Sans ça, un user qui quitte le dashboard pendant un batch verrait React
@@ -463,7 +508,7 @@ export default function DashboardPage() {
       }
 
       // Pré-remplit la modal onboarding si le nom est déjà connu (réouverture
-      // manuelle après reset de yield_onboarding_seen, ou bug de navigation).
+      // manuelle après reset de onboarding_seen_at, ou bug de navigation).
       void supabase.from("profiles").select("restaurant_name").eq("id", session.user.id).maybeSingle()
         .then(({ data }) => {
           const n = (data as { restaurant_name?: string } | null)?.restaurant_name?.trim();
@@ -472,7 +517,9 @@ export default function DashboardPage() {
 
       const subscribed = await refreshSubscription(session.user.id);
       if (typeof window === "undefined") return;
-      if (!localStorage.getItem("yield_onboarding_seen")) setShowOnboarding(true);
+      // NB : la décision d'afficher l'onboarding est pilotée par un effet
+      // dédié basé sur profiles.onboarding_seen_at (cf plus bas), plus sur
+      // localStorage — pour ne pas réapparaître sur un autre appareil.
 
       const params = new URLSearchParams(window.location.search);
       const cameFromCheckout = params.get("checkout") === "success";
