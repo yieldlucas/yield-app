@@ -319,3 +319,160 @@ export async function deleteInvoice(id: string): Promise<boolean> {
   }
   return true;
 }
+
+// ─── Quasi-doublons OCR à valider (pending_product_matches, migration 026) ───
+// Quand l'IA détecte qu'une ligne ressemble à un produit existant sans en être
+// un match exact, la ligne est créée avec product_id=NULL + pending_match=true,
+// et une row pending_product_matches liste les candidats. Tant que le chef n'a
+// pas tranché, la ligne n'alimente NI l'historique de prix NI les alertes.
+// Ces helpers permettent au chef de résoudre depuis la page facture.
+
+export type PendingMatchCandidate = { product_id: string; name: string; similarity: number };
+export type PendingMatch = {
+  /** id de la row pending_product_matches. */
+  id: string;
+  invoiceItemId: string;
+  rawLabel: string;
+  normalizedLabel: string;
+  unit: string;
+  candidates: PendingMatchCandidate[];
+};
+
+/** Charge les quasi-matches NON résolus d'une facture. */
+export async function fetchPendingMatches(invoiceId: string): Promise<PendingMatch[]> {
+  const { data, error } = await supabase
+    .from("pending_product_matches")
+    .select("id, invoice_item_id, raw_label, normalized_label, unit, candidate_product_ids")
+    .eq("invoice_id", invoiceId)
+    .is("resolved_at", null)
+    .order("created_at", { ascending: true });
+  if (error || !data) return [];
+  type Row = {
+    id: string;
+    invoice_item_id: string;
+    raw_label: string;
+    normalized_label: string;
+    unit: string;
+    candidate_product_ids: PendingMatchCandidate[] | null;
+  };
+  return (data as Row[]).map((r) => ({
+    id: r.id,
+    invoiceItemId: r.invoice_item_id,
+    rawLabel: r.raw_label,
+    normalizedLabel: r.normalized_label,
+    unit: r.unit,
+    candidates: Array.isArray(r.candidate_product_ids) ? r.candidate_product_ids : [],
+  }));
+}
+
+/** Lit (restaurant_id, supplier_id) d'une facture pour scoper produits / price_history. */
+async function fetchInvoiceContext(invoiceId: string): Promise<{ restaurantId: string; supplierId: string | null } | null> {
+  const { data } = await supabase
+    .from("invoices")
+    .select("restaurant_id, supplier_id")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  const row = data as { restaurant_id?: string; supplier_id?: string | null } | null;
+  if (!row?.restaurant_id) return null;
+  return { restaurantId: row.restaurant_id, supplierId: row.supplier_id ?? null };
+}
+
+/** Lit le prix unitaire HT courant d'une ligne de facture (peut avoir été corrigé). */
+async function fetchItemUnitPrice(invoiceItemId: string): Promise<number> {
+  const { data } = await supabase
+    .from("invoice_items")
+    .select("unit_price_ht")
+    .eq("id", invoiceItemId)
+    .maybeSingle();
+  return Number((data as { unit_price_ht?: number } | null)?.unit_price_ht) || 0;
+}
+
+/**
+ * "C'est le même produit" — lie la ligne au produit existant choisi, alimente
+ * l'historique de prix (le produit devient suivi à partir de ce scan) et marque
+ * le pending comme résolu. Best-effort multi-étapes : le lien de la ligne
+ * (étape critique qui sort la ligne du statut "à valider") est fait en premier.
+ */
+export async function resolvePendingMatchMerge(
+  pendingId: string,
+  invoiceItemId: string,
+  productId: string,
+  invoiceId: string,
+): Promise<boolean> {
+  const ctx = await fetchInvoiceContext(invoiceId);
+  const price = await fetchItemUnitPrice(invoiceItemId);
+
+  const { error: linkErr } = await supabase
+    .from("invoice_items")
+    .update({ product_id: productId, matched: true, pending_match: false })
+    .eq("id", invoiceItemId);
+  if (linkErr) return false;
+
+  if (price > 0) {
+    await supabase.from("price_history").insert({
+      product_id: productId,
+      price_ht: price,
+      invoice_id: invoiceId,
+      supplier_id: ctx?.supplierId ?? null,
+      source: "invoice",
+    });
+  }
+  await supabase
+    .from("pending_product_matches")
+    .update({ resolved_at: new Date().toISOString(), resolution: "merged" })
+    .eq("id", pendingId);
+  return true;
+}
+
+/**
+ * "Nouveau produit" — crée un produit à partir du libellé de la ligne, lie la
+ * ligne, alimente l'historique de prix, marque le pending résolu.
+ * Retourne l'id du produit créé, ou null en cas d'échec.
+ */
+export async function resolvePendingMatchCreate(
+  pendingId: string,
+  invoiceItemId: string,
+  rawLabel: string,
+  normalizedLabel: string,
+  unit: string,
+  invoiceId: string,
+): Promise<string | null> {
+  const ctx = await fetchInvoiceContext(invoiceId);
+  if (!ctx) return null;
+  const price = await fetchItemUnitPrice(invoiceItemId);
+
+  const { data: product, error: prodErr } = await supabase
+    .from("products")
+    .insert({
+      restaurant_id: ctx.restaurantId,
+      supplier_id: ctx.supplierId,
+      name: rawLabel,
+      name_normalized: normalizedLabel,
+      unit,
+    })
+    .select("id")
+    .single();
+  if (prodErr || !product) return null;
+  const productId = (product as { id: string }).id;
+
+  const { error: linkErr } = await supabase
+    .from("invoice_items")
+    .update({ product_id: productId, matched: false, pending_match: false })
+    .eq("id", invoiceItemId);
+  if (linkErr) return null;
+
+  if (price > 0) {
+    await supabase.from("price_history").insert({
+      product_id: productId,
+      price_ht: price,
+      invoice_id: invoiceId,
+      supplier_id: ctx.supplierId,
+      source: "invoice",
+    });
+  }
+  await supabase
+    .from("pending_product_matches")
+    .update({ resolved_at: new Date().toISOString(), resolution: "created_new" })
+    .eq("id", pendingId);
+  return productId;
+}

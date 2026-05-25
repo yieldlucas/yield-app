@@ -4,6 +4,21 @@ import type { NextConfig } from "next";
 // n'est pas configuré (cf sentry.*.config.ts pour le graceful fallback).
 import { withSentryConfig } from "@sentry/nextjs";
 
+// Headers de sécurité appliqués à toutes les routes. Set conservateur :
+//   - PAS de Content-Security-Policy ici (une CSP stricte mal réglée casse
+//     Stripe Checkout / Supabase / Sentry / styles inline — à introduire après
+//     un vrai passage de test dédié).
+//   - Permissions-Policy autorise la caméra en self (scan des BL), bloque le
+//     reste. Le file-input `capture` n'en dépend pas, mais on protège l'avenir.
+const securityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "SAMEORIGIN" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
+  { key: "X-DNS-Prefetch-Control", value: "on" },
+];
+
 const nextConfig: NextConfig = {
   output: "standalone",
   // Build strict : toute regression TS ou ESLint qui passerait la review locale
@@ -15,6 +30,9 @@ const nextConfig: NextConfig = {
   },
   eslint: {
     ignoreDuringBuilds: false,
+  },
+  async headers() {
+    return [{ source: "/(.*)", headers: securityHeaders }];
   },
 };
 

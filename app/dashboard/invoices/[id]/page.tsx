@@ -6,11 +6,14 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle, ArrowLeft, Calculator, Download, FileText, X, ZoomIn, Check,
-  Pencil, ChevronDown, RotateCcw, Salad, Save, Trash2,
+  Pencil, ChevronDown, RotateCcw, Salad, Save, Trash2, Plus,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase-browser";
 import { openSignedExport } from "@/lib/export-download";
-import { deleteInvoice } from "@/app/dashboard/_lib/dashboard-data";
+import {
+  deleteInvoice, fetchPendingMatches, resolvePendingMatchMerge, resolvePendingMatchCreate,
+  type PendingMatch,
+} from "@/app/dashboard/_lib/dashboard-data";
 import { FlashCalculator, type CalculatorInitialIngredient } from "@/app/dashboard/_components/FlashCalculator";
 import { PageSpinner } from "@/app/dashboard/_components/PageSpinner";
 
@@ -96,6 +99,11 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // Quasi-doublons OCR à valider (migration 026). `resolvingId` = id du pending
+  // en cours de résolution (désactive ses boutons + spinner).
+  const [pendingMatches, setPendingMatches] = useState<PendingMatch[]>([]);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [pendingError, setPendingError] = useState<string | null>(null);
   // FlashCalculator : ouvert depuis le bouton calculatrice d'une ligne
   // produit. Pré-rempli en injectant la ligne comme premier ingrédient — l'user
   // peut ensuite ajouter d'autres composants pour simuler une recette complète.
@@ -174,9 +182,12 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
           .from("invoices")
           .createSignedUrl(fullInvoice.image_path, 3600);
 
+        const pm = await fetchPendingMatches(invoiceId);
+
         if (cancelled) return;
         setInvoice(fullInvoice);
         setItems(enriched);
+        setPendingMatches(pm);
         setImageUrl(signed?.signedUrl ?? null);
         setLoading(false);
       } catch (e) {
@@ -314,6 +325,47 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
       return;
     }
     router.replace("/dashboard");
+  };
+
+  // ── Résolution des quasi-doublons ───
+  // Marque l'item résolu localement (le retire de la section "à valider" et le
+  // passe en ligne normale dans le tableau). Le produit devient suivi à partir
+  // de ce scan (price_history alimenté côté data layer).
+  const markItemResolved = (invoiceItemId: string, productId: string, matched: boolean) => {
+    setItems((prev) => prev.map((it) =>
+      it.id === invoiceItemId ? { ...it, product_id: productId, matched, pending_match: false } : it,
+    ));
+  };
+
+  const handleMergePending = async (m: PendingMatch, productId: string) => {
+    if (resolvingId) return;
+    setResolvingId(m.id);
+    setPendingError(null);
+    const ok = await resolvePendingMatchMerge(m.id, m.invoiceItemId, productId, invoiceId);
+    setResolvingId(null);
+    if (!ok) {
+      setPendingError("La validation a échoué. Vérifiez votre connexion et réessayez.");
+      return;
+    }
+    markItemResolved(m.invoiceItemId, productId, true);
+    setPendingMatches((prev) => prev.filter((p) => p.id !== m.id));
+  };
+
+  const handleCreatePending = async (m: PendingMatch) => {
+    if (resolvingId) return;
+    setResolvingId(m.id);
+    setPendingError(null);
+    const newProductId = await resolvePendingMatchCreate(
+      m.id, m.invoiceItemId, m.rawLabel, m.normalizedLabel, m.unit, invoiceId,
+    );
+    setResolvingId(null);
+    if (!newProductId) {
+      setPendingError("La création du produit a échoué. Vérifiez votre connexion et réessayez.");
+      return;
+    }
+    // matched=false : c'est un produit tout neuf, pas un match du catalogue.
+    markItemResolved(m.invoiceItemId, newProductId, false);
+    setPendingMatches((prev) => prev.filter((p) => p.id !== m.id));
   };
 
   // ── States UI ───
@@ -463,32 +515,76 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
             </span>
           </div>
 
-          {/* Fix audit C4 (Temps 2) — bandeau informatif si des items sont en
-              pending_match (produit ressemblant à un existant, en attente de
-              validation chef). UI minimale V1 : compteur uniquement, pas
-              d'interaction. UI complète (boutons "C'est le même" / "Créer un
-              nouveau") spec dans docs/ui-todo-pending-matches.md, à livrer
-              dans un cycle dédié après les premiers retours ambassadeurs.
-              TODO audit C4 — UI validation des pending_matches : voir docs/ui-todo-pending-matches.md */}
-          {(() => {
-            const pendingCount = items.filter(it => it.pending_match).length;
-            if (pendingCount === 0) return null;
-            return (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 mb-3 flex items-start gap-3">
+          {/* Produits à valider (quasi-doublons OCR, migration 026). Tant que
+              non résolus, ces items sont comptés dans le total facture mais
+              n'alimentent ni l'historique de prix ni les alertes. Le chef
+              tranche : "C'est le même" (lie au produit existant) ou "nouveau
+              produit" (crée une fiche). Voir resolvePendingMatch* (dashboard-data). */}
+          {pendingMatches.length > 0 && (
+            <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 mb-3">
+              <div className="flex items-start gap-2.5 mb-3">
                 <AlertTriangle size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0">
                   <p className="text-amber-900 text-sm font-semibold">
-                    {pendingCount} produit{pendingCount > 1 ? "s" : ""} ressemble{pendingCount > 1 ? "nt" : ""} à un existant — en attente de validation
+                    {pendingMatches.length} produit{pendingMatches.length > 1 ? "s" : ""} à valider
                   </p>
                   <p className="text-amber-700 text-xs mt-0.5 leading-relaxed">
-                    Ces lignes sont comptées dans le total de la facture mais
-                    n&apos;alimentent pas encore l&apos;historique des prix ni les
-                    alertes. L&apos;interface de validation arrive prochainement.
+                    {pendingMatches.length > 1 ? "Ces lignes ressemblent" : "Cette ligne ressemble"} à un produit
+                    déjà connu. Confirmez pour qu&apos;{pendingMatches.length > 1 ? "elles alimentent" : "elle alimente"} l&apos;historique
+                    des prix et les alertes.
                   </p>
                 </div>
               </div>
-            );
-          })()}
+
+              {pendingError && (
+                <p className="text-rose-600 text-xs mb-2" role="alert">{pendingError}</p>
+              )}
+
+              <div className="space-y-2.5">
+                {pendingMatches.map((m) => {
+                  const busy = resolvingId === m.id;
+                  return (
+                    <div key={m.id} className="rounded-lg bg-white border border-amber-100 p-3">
+                      <p className="text-slate-900 text-sm font-semibold truncate">{m.rawLabel}</p>
+                      <p className="text-slate-400 text-[11px] mb-2">Unité : {m.unit || "—"}</p>
+
+                      <div className="space-y-1.5">
+                        {m.candidates.slice(0, 3).map((c) => (
+                          <div key={c.product_id} className="flex items-center gap-2">
+                            <span className="flex-1 min-w-0 text-sm text-slate-700 truncate" title={c.name}>{c.name}</span>
+                            <button
+                              onClick={() => handleMergePending(m, c.product_id)}
+                              disabled={busy}
+                              className="flex-shrink-0 inline-flex items-center gap-1 text-[12px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-full transition-colors disabled:opacity-50"
+                            >
+                              <Check size={12} /> C&apos;est le même
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => handleCreatePending(m)}
+                        disabled={busy}
+                        className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 text-[12px] font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        {busy ? (
+                          <>
+                            <div className="w-3 h-3 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
+                            Validation…
+                          </>
+                        ) : (
+                          <>
+                            <Plus size={13} /> Non, c&apos;est un nouveau produit
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Items table */}
           <div className="rounded-xl bg-white border border-slate-100 shadow-sm overflow-hidden">
