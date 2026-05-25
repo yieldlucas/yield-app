@@ -195,12 +195,16 @@ function parseClaudeResponse(raw: string): ExtractedInvoice {
       reasons.push("price_out_of_range");
     }
 
+    // ?? ne rattrape PAS NaN (seulement null/undefined) : "Number(x) ?? 5.5"
+    // laissait passer NaN quand vat_rate était absent/non-numérique. On teste
+    // explicitement la finitude pour garantir le fallback 5.5 (TVA produits bruts).
+    const parsedVat = Number(item.vat_rate);
     return {
       ...item,
       quantity,
       unit_price_ht,
       total_price_ht,
-      vat_rate: Number(item.vat_rate) ?? 5.5,
+      vat_rate: Number.isFinite(parsedVat) ? parsedVat : 5.5,
       needs_review: reasons.length > 0,
       review_reason: reasons.length > 0 ? reasons.join("|") : undefined,
     };
