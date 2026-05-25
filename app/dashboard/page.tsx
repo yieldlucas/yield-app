@@ -754,19 +754,20 @@ export default function DashboardPage() {
         </footer>
       </div>
 
-      {/* Inputs file cachés — déclenchés par les FAB / CTA.
-          ⚠️ PAS d'attribut `capture` sur l'input caméra : sur Android Chrome
-          (Pixel), `capture` fait échouer EN SILENCE le `.click()` programmatique
-          (Chrome tente de lancer l'intent caméra directement et n'y arrive pas
-          via clic JS → rien ne s'ouvre). Sans `capture`, Android ouvre le
-          sélecteur natif « Appareil photo / Fichiers » — fiable, et c'est là que
-          le chef choisit l'appareil photo. Diagnostic confirmé : à config
-          identique, l'input "Importer" (sans capture) s'ouvrait, "Scanner" (avec
-          capture) non. Les deux inputs sont donc volontairement identiques.
-          Cachés en `sr-only` (pas `display:none`, que Chrome mobile peut bloquer). */}
+      {/* Inputs file cachés — déclenchés par les FAB / CTA. Réglages issus du
+          debug terrain Android (Pixel) :
+          - Caméra : `accept="image/*"` SEUL (pas de application/pdf). Un type
+            non-photographiable dans l'accept fait basculer Android sur le
+            sélecteur de documents (Fichiers) sans proposer l'appareil photo.
+            Avec image/* uniquement, Android propose « Appareil photo ».
+          - PAS d'attribut `capture` : il fait échouer en silence le .click()
+            programmatique sur Android (Chrome tente l'intent caméra direct et
+            n'y arrive pas via clic JS → rien ne s'ouvre).
+          - Cachés en `sr-only`, pas `display:none` (que Chrome mobile bloque).
+          Les PDF / imports passent par l'input galerie ci-dessous (accept élargi). */}
       <input
         ref={cameraInputRef} type="file" multiple className="sr-only"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
+        accept="image/*"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
       <input
