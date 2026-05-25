@@ -755,13 +755,17 @@ export default function DashboardPage() {
       </div>
 
       {/* Inputs file cachés — déclenchés par les FAB / CTA.
-          ⚠️ On les cache en `sr-only` (hors écran mais présents dans le layout),
-          PAS en `hidden`/`display:none` : Android Chrome bloque le `.click()`
-          programmatique sur un input `display:none` (rien ne s'ouvre sur mobile,
-          alors que desktop l'autorise — symptôme observé sur Pixel). `sr-only`
-          garde l'input "cliquable" pour le navigateur tout en restant invisible. */}
+          ⚠️ PAS d'attribut `capture` sur l'input caméra : sur Android Chrome
+          (Pixel), `capture` fait échouer EN SILENCE le `.click()` programmatique
+          (Chrome tente de lancer l'intent caméra directement et n'y arrive pas
+          via clic JS → rien ne s'ouvre). Sans `capture`, Android ouvre le
+          sélecteur natif « Appareil photo / Fichiers » — fiable, et c'est là que
+          le chef choisit l'appareil photo. Diagnostic confirmé : à config
+          identique, l'input "Importer" (sans capture) s'ouvrait, "Scanner" (avec
+          capture) non. Les deux inputs sont donc volontairement identiques.
+          Cachés en `sr-only` (pas `display:none`, que Chrome mobile peut bloquer). */}
       <input
-        ref={cameraInputRef} type="file" multiple capture="environment" className="sr-only"
+        ref={cameraInputRef} type="file" multiple className="sr-only"
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
