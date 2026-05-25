@@ -8,14 +8,16 @@ import { withSentryConfig } from "@sentry/nextjs";
 //   - PAS de Content-Security-Policy ici (une CSP stricte mal réglée casse
 //     Stripe Checkout / Supabase / Sentry / styles inline — à introduire après
 //     un vrai passage de test dédié).
-//   - Permissions-Policy autorise la caméra en self (scan des BL), bloque le
-//     reste. Le file-input `capture` n'en dépend pas, mais on protège l'avenir.
+//   - PAS de Permissions-Policy `camera` : l'ouverture de l'appareil photo se
+//     fait via <input type="file" capture="environment"> (le scan des BL = LE
+//     cœur du produit). Selon le navigateur, `camera=(self)` bloquait cet input
+//     → on retire la directive. À ré-introduire seulement après test caméra
+//     dédié sur iOS Safari + Android Chrome.
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-  { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=()" },
   { key: "X-DNS-Prefetch-Control", value: "on" },
 ];
 
