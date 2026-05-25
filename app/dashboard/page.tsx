@@ -755,9 +755,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Inputs file cachés — déclenchés par les FAB / CTA */}
+      {/* Caméra : config STRICTE pour ouvrir l'appareil photo arrière sur mobile.
+          - PAS de `multiple` : sur iOS Safari, `multiple` fait ignorer `capture`
+            et le téléphone n'ouvre pas la caméra. La prise est mono-photo ; pour
+            enchaîner, le chef rescanne (le stack accumule les BL).
+          - `accept="image/*"` uniquement : inclure application/pdf bascule les
+            navigateurs mobiles vers le sélecteur de fichiers au lieu de la caméra.
+            Les PDF passent par le bouton "Importer" (input galerie ci-dessous). */}
       <input
-        ref={cameraInputRef} type="file" multiple capture="environment" className="hidden"
-        accept="image/jpeg,image/png,image/webp,application/pdf"
+        ref={cameraInputRef} type="file" capture="environment" className="hidden"
+        accept="image/*"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
       <input
