@@ -754,20 +754,19 @@ export default function DashboardPage() {
         </footer>
       </div>
 
-      {/* Inputs file cachés — déclenchés par les FAB / CTA */}
-      {/* Caméra : NE PAS forcer `capture` seul + accept="image/*" → sur Android
-          (Pixel) le clic programmatique tente d'ouvrir la caméra en direct et
-          échoue en silence (rien ne s'ouvre). La config `multiple` + accept
-          image+PDF fait afficher le sélecteur natif Android "Appareil photo /
-          Fichiers" qui, lui, est fiable. C'est le comportement qui marchait —
-          on le conserve. (Régression introduite puis annulée, cf historique.) */}
+      {/* Inputs file cachés — déclenchés par les FAB / CTA.
+          ⚠️ On les cache en `sr-only` (hors écran mais présents dans le layout),
+          PAS en `hidden`/`display:none` : Android Chrome bloque le `.click()`
+          programmatique sur un input `display:none` (rien ne s'ouvre sur mobile,
+          alors que desktop l'autorise — symptôme observé sur Pixel). `sr-only`
+          garde l'input "cliquable" pour le navigateur tout en restant invisible. */}
       <input
-        ref={cameraInputRef} type="file" multiple capture="environment" className="hidden"
+        ref={cameraInputRef} type="file" multiple capture="environment" className="sr-only"
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
       <input
-        ref={galleryInputRef} type="file" multiple className="hidden"
+        ref={galleryInputRef} type="file" multiple className="sr-only"
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
