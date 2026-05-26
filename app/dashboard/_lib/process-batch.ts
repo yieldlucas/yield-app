@@ -64,6 +64,15 @@ export async function processBatch(
       await cb.onItemSuccess(item.id, result.scansUsed);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (issue runtime A vs C)
+      console.error("[batch-diag] item failed", {
+        fileName: item.fileName,
+        index: items.indexOf(item),
+        totalItems: items.length,
+        error: msg,
+        rawError: err,
+        timestamp: new Date().toISOString(),
+      });
       if (isQuotaExceeded(err)) {
         cb.updateItem(item.id, { status: "error", error: "Quota mensuel atteint" });
         cb.cancelQueued("Lot annulé : quota atteint");

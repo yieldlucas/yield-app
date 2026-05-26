@@ -416,6 +416,13 @@ export default function DashboardPage() {
     if (batchRunningRef.current || stack.length === 0) return;
     batchRunningRef.current = true;
     const queued = stack.map<BatchInput>((s) => ({ id: s.id, fileName: s.fileName, status: "queued", file: s.file }));
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (issue runtime A vs C)
+    console.log("[batch-diag] queued at click", {
+      length: queued.length,
+      stackLength: stack.length,
+      fileNames: queued.map((q) => q.fileName),
+      timestamp: new Date().toISOString(),
+    });
     batchFilesRef.current = new Map(queued.map((q) => [q.id, q.file]));
     setBatch(queued);
     setBatchOpen(true);
