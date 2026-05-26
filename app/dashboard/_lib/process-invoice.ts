@@ -65,11 +65,6 @@ export async function processOne(
   onSessionLost: () => void,
   signal?: ProcessSignal,
 ): Promise<ProcessOneResult> {
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne enter", {
-    fileName: file.name,
-    timestamp: new Date().toISOString(),
-  });
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     onSessionLost();
@@ -77,21 +72,10 @@ export async function processOne(
   }
   const formData = new FormData();
   formData.append("invoice", file);
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne pre-fetch", {
-    fileName: file.name,
-    timestamp: new Date().toISOString(),
-  });
   const res = await fetch("/api/invoices/process", {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}` },
     body: formData,
-  });
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne post-fetch", {
-    fileName: file.name,
-    httpStatus: res.status,
-    timestamp: new Date().toISOString(),
   });
   if (res.status === 402) {
     const j = await res.json().catch(() => ({}));
