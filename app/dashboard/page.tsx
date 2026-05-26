@@ -13,6 +13,7 @@ import { openSignedExport } from "@/lib/export-download";
 
 import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
+import { CameraCapture } from "./_components/CameraCapture";
 import { StackTray } from "./_components/StackTray";
 import { TrialBanner } from "./_components/TrialBanner";
 import { ReferralTrialBanner } from "./_components/ReferralTrialBanner";
@@ -78,6 +79,8 @@ export default function DashboardPage() {
   const [batch, setBatch] = useState<BatchItem[]>([]);
   const [batchOpen, setBatchOpen] = useState(false);
   const [cameraGuideOpen, setCameraGuideOpen] = useState(false);
+  // Caméra intégrée (getUserMedia) — remplace le déclenchement <input capture>.
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [stack, setStack] = useState<StackItem[]>([]);
   const [invoiceFilter, setInvoiceFilter] = useState<InvoiceFilter>("all");
   const [usage, setUsage] = useState<{ used: number; quota: number } | null>(null);
@@ -123,20 +126,24 @@ export default function DashboardPage() {
   // arrêter proprement le polling et éviter les setState orphelins.
   const batchSignalRef = useRef<ProcessSignal>({ cancelled: false });
 
-  // ─── Camera UX : guide à la 1ère utilisation, ouverture directe ensuite ───
-  const openCamera = () => {
-    if (typeof window !== "undefined" && localStorage.getItem(CAMERA_GUIDE_SEEN_KEY) === "1") {
-      cameraInputRef.current?.click();
-      return;
-    }
-    setCameraGuideOpen(true);
-  };
+  // ─── Camera UX : caméra intégrée (getUserMedia) ───
+  // openCamera ouvre désormais le composant CameraCapture plutôt que de
+  // cliquer un <input capture> (qui échoue en silence sur certains Android /
+  // PWA). launchNativeCamera et l'input fichier restent comme fallback
+  // (déclenchés depuis le composant si la caméra est indisponible).
+  const openCamera = () => setCameraOpen(true);
   const launchNativeCamera = () => {
     setCameraGuideOpen(false);
     if (typeof window !== "undefined") localStorage.setItem(CAMERA_GUIDE_SEEN_KEY, "1");
     cameraInputRef.current?.click();
   };
   const openGallery = () => galleryInputRef.current?.click();
+  /** Photo capturée par la caméra intégrée → même flux que l'import (stack). */
+  const addCapturedFile = async (file: File) => {
+    setCameraOpen(false);
+    const item = await addToStack(file);
+    setStack((prev) => [...prev, item]);
+  };
   const dismissOnboarding = () => {
     setShowOnboarding(false);
     // Persistance côté compte (migration 027) — l'onboarding ne réapparaîtra
@@ -682,6 +689,7 @@ export default function DashboardPage() {
             les KPIs passifs. L'objectif est qu'un chef pressé voit d'abord
             "que peut-il faire" puis "où il en est". */}
         <DashboardHero
+          onScan={openCamera}
           onCreateRecipe={() => { setCalcSeed(null); setCalcOpen(true); }}
           recipesCount={recipesStats?.total ?? 0}
         />
@@ -753,17 +761,12 @@ export default function DashboardPage() {
         </footer>
       </div>
 
-      {/* Inputs file cachés — déclenchés par les FAB / CTA. Réglages issus du
-          debug terrain Android (Pixel) :
-          - Caméra : `accept="image/*"` SEUL (pas de application/pdf). Un type
-            non-photographiable dans l'accept fait basculer Android sur le
-            sélecteur de documents (Fichiers) sans proposer l'appareil photo.
-            Avec image/* uniquement, Android propose « Appareil photo ».
-          - PAS d'attribut `capture` : il fait échouer en silence le .click()
-            programmatique sur Android (Chrome tente l'intent caméra direct et
-            n'y arrive pas via clic JS → rien ne s'ouvre).
-          - Cachés en `sr-only`, pas `display:none` (que Chrome mobile bloque).
-          Les PDF / imports passent par l'input galerie ci-dessous (accept élargi). */}
+      {/* Inputs file cachés (sr-only) — fallback "Importer" / sélecteur de
+          fichiers. Le scan principal passe désormais par la caméra intégrée
+          (<CameraCapture>, getUserMedia) car <input capture> échoue en silence
+          sur certains Android / PWA. galleryInputRef sert à l'import (et au
+          fallback "Importer une photo" depuis la caméra). cameraInputRef reste
+          déclenché par le guide caméra legacy (fallback). */}
       <input
         ref={cameraInputRef} type="file" multiple className="sr-only"
         accept="image/*"
@@ -774,24 +777,23 @@ export default function DashboardPage() {
         accept="image/jpeg,image/png,image/webp,application/pdf"
         onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
       />
-      {/* Input caméra déclenché par <label htmlFor> (tap direct), PAS par un
-          .click() JS. Sur Android, seul un tap direct sur un input `capture`
-          ouvre l'appareil photo ; le .click() programmatique échoue (rien) ou
-          tombe sur le sélecteur de fichiers. Un <label> fournit cette activation
-          de confiance. id ciblé par les boutons "Scanner" (cf DashboardHero). */}
-      <input
-        id="yield-camera-input" type="file" capture="environment" accept="image/*" className="sr-only"
-        onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
-      />
 
       <ScannerFAB onClick={openCamera} show={invoices.length > 0 && stack.length === 0} />
       <CameraGuide open={cameraGuideOpen} onConfirm={launchNativeCamera} onCancel={() => setCameraGuideOpen(false)} />
+      {/* Caméra intégrée (getUserMedia) — flux de scan principal. Fallback vers
+          le sélecteur de fichiers (openGallery) si la caméra est refusée/indispo. */}
+      <CameraCapture
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(file) => { void addCapturedFile(file); }}
+        onPickFile={() => { setCameraOpen(false); openGallery(); }}
+      />
       <AnimatePresence>
         {stack.length > 0 && (
           <StackTray
             items={stack}
             onSend={sendStack} onRemove={removeStackItem} onClearAll={clearStackAll}
-            onAddMore={launchNativeCamera} onShowGuide={() => setCameraGuideOpen(true)}
+            onAddMore={openCamera} onShowGuide={() => setCameraGuideOpen(true)}
             busy={batchOpen && !batch.every((i) => i.status === "done" || i.status === "error")}
           />
         )}

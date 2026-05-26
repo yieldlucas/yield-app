@@ -16,9 +16,11 @@ import { Camera, ChevronRight, Salad, ScanLine } from "lucide-react";
 import { YieldLogo } from "@/app/_components/YieldLogo";
 
 export function DashboardHero({
+  onScan,
   onCreateRecipe,
   recipesCount = 0,
 }: {
+  onScan: () => void;
   onCreateRecipe: () => void;
   /** Nombre de recettes enregistrées — adapte le label de la Card B
    *  ("Créer une recette" si 0, "Voir mes recettes (N)" sinon). */
@@ -31,14 +33,9 @@ export function DashboardHero({
       className="grid grid-cols-1 sm:grid-cols-2 gap-3"
     >
       {/* ── Card A — Le Moteur ────────────────────────────── */}
-      {/* <label> (pas <button>) relié à l'input #yield-camera-input : sur mobile,
-          un tap sur un label active nativement l'input caméra (activation de
-          confiance) → l'appareil photo s'ouvre. Un onClick + .click() JS, lui,
-          n'ouvre pas la caméra sur Android. cursor-pointer car un label n'a pas
-          le curseur main par défaut. */}
-      <label
-        htmlFor="yield-camera-input"
-        className="group relative overflow-hidden text-left rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-500 to-blue-600 p-5 shadow-sm hover:shadow-lg transition-all cursor-pointer block"
+      <button
+        onClick={onScan}
+        className="group relative overflow-hidden text-left rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-500 to-blue-600 p-5 shadow-sm hover:shadow-lg transition-all"
       >
         {/* Halo décoratif */}
         <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full bg-white/10 blur-xl" />
@@ -63,7 +60,7 @@ export function DashboardHero({
             <ChevronRight size={14} className="-mr-1 transition-transform group-hover:translate-x-0.5" />
           </span>
         </div>
-      </label>
+      </button>
 
       {/* ── Card B — Le Pilote ────────────────────────────── */}
       <Link
