@@ -36,6 +36,8 @@ export function CameraCapture({
   const [phase, setPhase] = useState<Phase>("loading");
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Voyant de cadrage : "ok" (net + assez lumineux) → contour vert, sinon conseil.
+  const [framing, setFraming] = useState<"idle" | "ok" | "blurry" | "dark">("idle");
 
   const isStandalone =
     typeof window !== "undefined" &&
@@ -57,10 +59,29 @@ export function CameraCapture({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        // Haute résolution idéale → texte des BL net pour l'OCR (le navigateur
+        // baisse tout seul si l'appareil ne suit pas, `ideal` ne fait pas échouer).
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 2560 },
+          height: { ideal: 1440 },
+        },
         audio: false,
       });
       streamRef.current = stream;
+      // Autofocus continu si supporté — indispensable pour lire un document de
+      // près. Constraints "advanced" hors types DOM standard → cast + try/catch
+      // (ignoré en silence si l'appareil/navigateur ne le gère pas ; la caméra
+      // reste alors en mise au point auto par défaut).
+      try {
+        const track = stream.getVideoTracks()[0];
+        const caps = (track.getCapabilities?.() ?? {}) as { focusMode?: string[] };
+        if (caps.focusMode?.includes("continuous")) {
+          await track.applyConstraints({
+            advanced: [{ focusMode: "continuous" } as unknown as MediaTrackConstraintSet],
+          });
+        }
+      } catch { /* focusMode non supporté */ }
       setPhase("live");
       // Le <video> est monté dans la phase "live" → on attache au prochain tick.
       requestAnimationFrame(() => {
@@ -111,6 +132,51 @@ export function CameraCapture({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Analyse temps réel du cadrage (uniquement quand l'aperçu tourne). On
+  // échantillonne une mini-version de l'image (192px) toutes les ~450ms et on
+  // calcule netteté (énergie de gradient) + luminosité. C'est un GUIDE, jamais
+  // un bloqueur : le bouton de capture reste toujours actif.
+  useEffect(() => {
+    if (phase !== "live" || !ready) return;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const id = window.setInterval(() => {
+      const video = videoRef.current;
+      if (!video || !video.videoWidth || !ctx) return;
+      const w = 192;
+      const h = Math.max(1, Math.round((w * video.videoHeight) / video.videoWidth));
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(video, 0, 0, w, h);
+      let data: Uint8ClampedArray;
+      try { data = ctx.getImageData(0, 0, w, h).data; } catch { return; }
+      const gray = new Float32Array(w * h);
+      let sum = 0;
+      for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+        const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        gray[p] = g;
+        sum += g;
+      }
+      const brightness = sum / (w * h);
+      // Énergie de gradient moyenne = proxy de netteté/mise au point. Un document
+      // net (texte) a beaucoup d'arêtes (valeur haute) ; flou = valeur basse.
+      let grad = 0;
+      let count = 0;
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const idx = y * w + x;
+          grad += Math.abs(gray[idx] - gray[idx + 1]) + Math.abs(gray[idx] - gray[idx + w]);
+          count++;
+        }
+      }
+      const sharpness = count ? grad / count : 0;
+      if (brightness < 45) setFraming("dark");
+      else if (sharpness < 7) setFraming("blurry"); // seuil empirique, ajustable
+      else setFraming("ok");
+    }, 450);
+    return () => window.clearInterval(id);
+  }, [phase, ready]);
 
   const capture = () => {
     const video = videoRef.current;
@@ -259,7 +325,39 @@ export function CameraCapture({
                   </div>
                 )}
                 {ready && (
-                  <div aria-hidden className="absolute inset-6 border-2 border-white/30 rounded-2xl pointer-events-none" />
+                  <>
+                    {/* Contour : vert quand net + lumineux, orange sinon. */}
+                    <div
+                      aria-hidden
+                      className={`absolute inset-6 border-[3px] rounded-2xl pointer-events-none transition-colors duration-300 ${
+                        framing === "ok"
+                          ? "border-emerald-400"
+                          : framing === "idle"
+                            ? "border-white/30"
+                            : "border-amber-400"
+                      }`}
+                    />
+                    {/* Voyant texte */}
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold shadow-lg transition-colors ${
+                          framing === "ok"
+                            ? "bg-emerald-500 text-white"
+                            : framing === "idle"
+                              ? "bg-black/40 text-white/80"
+                              : "bg-amber-500 text-white"
+                        }`}
+                      >
+                        {framing === "ok"
+                          ? "✓ Net — prêt à scanner"
+                          : framing === "dark"
+                            ? "Trop sombre — plus de lumière"
+                            : framing === "blurry"
+                              ? "Stabilisez ou rapprochez-vous"
+                              : "Cadrez le bon de livraison"}
+                      </span>
+                    </div>
+                  </>
                 )}
               </>
             )}
@@ -283,7 +381,10 @@ export function CameraCapture({
                 className="rounded-full bg-white flex items-center justify-center disabled:opacity-50 active:scale-95 transition-transform"
                 style={{ width: 72, height: 72 }}
               >
-                <span className="rounded-full border-4 border-slate-900/80" style={{ width: 58, height: 58 }} />
+                <span
+                  className={`rounded-full border-4 transition-colors ${framing === "ok" ? "border-emerald-500" : "border-slate-900/80"}`}
+                  style={{ width: 58, height: 58 }}
+                />
               </button>
               <div className="w-12 h-12" />
             </div>
