@@ -188,12 +188,15 @@ export function CameraCapture({
                 <div className="text-white/65 text-sm leading-relaxed mb-5 text-left bg-white/5 rounded-xl p-4">
                   {isStandalone ? (
                     <>
-                      <p className="mb-2 font-medium text-white/80">Pour réactiver (une seule fois) :</p>
+                      <p className="mb-2 font-medium text-white/80">
+                        Pour une app installée, la permission caméra se règle dans <strong>Chrome</strong>,
+                        pas dans les réglages de l&apos;app (vous n&apos;y verrez que «&nbsp;Notifications&nbsp;») :
+                      </p>
                       <ol className="list-decimal list-inside space-y-1">
-                        <li>Quittez l&apos;app, restez appuyé sur l&apos;icône <strong>YIELD</strong>.</li>
-                        <li>Touchez <strong>Infos appli</strong> (ⓘ).</li>
-                        <li><strong>Autorisations</strong> → <strong>Appareil photo</strong> → <strong>Autoriser</strong>.</li>
-                        <li>Rouvrez Yield et rescannez.</li>
+                        <li>Ouvrez <strong>Chrome</strong> (le navigateur).</li>
+                        <li>Menu <strong>⋮</strong> → <strong>Paramètres</strong> → <strong>Paramètres des sites</strong>.</li>
+                        <li><strong>Appareil photo</strong> → trouvez <strong>yieldapp.fr</strong> (souvent dans «&nbsp;Bloqués&nbsp;») → <strong>Autoriser</strong>.</li>
+                        <li>Rouvrez Yield et rescannez. Le plus simple : utilisez Yield <strong>dans un onglet Chrome</strong>, où l&apos;autorisation est plus directe.</li>
                       </ol>
                     </>
                   ) : (
