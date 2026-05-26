@@ -14,6 +14,8 @@ import { openSignedExport } from "@/lib/export-download";
 import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
 import { CameraCapture } from "./_components/CameraCapture";
+// [batch-diag] overlay debug TEMPORAIRE — à retirer avec le fix final.
+import { DebugOverlay } from "./_components/DebugOverlay";
 import { StackTray } from "./_components/StackTray";
 import { TrialBanner } from "./_components/TrialBanner";
 import { ReferralTrialBanner } from "./_components/ReferralTrialBanner";
@@ -820,6 +822,9 @@ export default function DashboardPage() {
         onCapture={(file) => { void addCapturedFile(file); }}
         onPickFile={() => { setCameraOpen(false); openGallery(); }}
       />
+      {/* [batch-diag] overlay debug TEMPORAIRE — visible seulement si
+          NEXT_PUBLIC_BATCH_DIAG="true". À retirer avec le fix final. */}
+      <DebugOverlay />
       <AnimatePresence>
         {stack.length > 0 && (
           <StackTray
