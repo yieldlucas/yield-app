@@ -41,20 +41,51 @@ export async function processBatch(
   cb: BatchCallbacks,
   signal?: ProcessSignal,
 ): Promise<void> {
+  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+  console.log("[batch-diag] processBatch start", {
+    itemsLength: items.length,
+    signalCancelled: signal?.cancelled ?? "n/a",
+    timestamp: new Date().toISOString(),
+  });
   for (const item of items) {
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+    console.log("[batch-diag] iter start", {
+      index: items.indexOf(item),
+      fileName: item.fileName,
+      signalCancelled: signal?.cancelled ?? "n/a",
+      timestamp: new Date().toISOString(),
+    });
     if (signal?.cancelled) return;
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+    console.log("[batch-diag] iter post-signal-check", {
+      index: items.indexOf(item),
+      willProcess: true,
+      timestamp: new Date().toISOString(),
+    });
     cb.updateItem(item.id, { status: "uploading" });
     try {
       // Petit délai pour donner du feedback visuel.
       await new Promise((r) => setTimeout(r, 400));
       if (signal?.cancelled) return;
       cb.updateItem(item.id, { status: "processing" });
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+      console.log("[batch-diag] iter pre-processOne", {
+        index: items.indexOf(item),
+        fileName: item.fileName,
+        timestamp: new Date().toISOString(),
+      });
       const result = await processOne(
         item.file,
         (step) => { if (!signal?.cancelled) cb.updateItem(item.id, step); },
         cb.onSessionLost,
         signal,
       );
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+      console.log("[batch-diag] iter post-processOne success", {
+        index: items.indexOf(item),
+        fileName: item.fileName,
+        timestamp: new Date().toISOString(),
+      });
       if (signal?.cancelled) return;
       cb.updateItem(item.id, {
         status: "done",
@@ -88,5 +119,10 @@ export async function processBatch(
       cb.updateItem(item.id, { status: "error", error: msg });
     }
   }
+  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+  console.log("[batch-diag] processBatch end", {
+    itemsLength: items.length,
+    timestamp: new Date().toISOString(),
+  });
   cb.onBatchFinished();
 }
