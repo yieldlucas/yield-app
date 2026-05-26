@@ -352,6 +352,13 @@ export default function DashboardPage() {
    *  court délai. Le polling existant sur les invoices.processing_step
    *  prend le relais via les InvoiceCard, sans bloquer l'écran. */
   const hasAutoClosedRef = useRef(false);
+  // Garde anti-réentrée : empêche de relancer un lot tant que le précédent
+  // tourne (l'overlay s'auto-ferme avant la fin → sans ça le bouton "Envoyer"
+  // se réactiverait et on relancerait le même lot en double).
+  const batchRunningRef = useRef(false);
+  // Fichiers du lot courant (id → File) pour permettre le retry des items en
+  // erreur, maintenant que le stack est vidé dès l'envoi.
+  const batchFilesRef = useRef<Map<string, File>>(new Map());
   const runBatch = (input: BatchInput[]) => {
     hasAutoClosedRef.current = false;
     return processBatch(input, {
@@ -381,17 +388,20 @@ export default function DashboardPage() {
       },
       onSessionLost: () => router.replace("/"),
       onQuotaExceeded: () => {
+        batchRunningRef.current = false;
         setBatchOpen(false);
         setQuotaExceeded(true);
         setUsage((u) => (u ? { ...u, used: u.quota } : { used: QUOTA, quota: QUOTA }));
       },
       onPaymentRequired: () => {
+        batchRunningRef.current = false;
         setBatchOpen(false);
         setShowTrial(true);
         setPaymentRequired(true);
         setTimeout(() => { void startCheckout(); }, 600);
       },
       onBatchFinished: () => {
+        batchRunningRef.current = false;
         void reloadInvoices();
         void reloadAlerts();
         void reloadMonthlyStats();
@@ -402,21 +412,36 @@ export default function DashboardPage() {
   };
 
   const sendStack = () => {
-    if (stack.length === 0) return;
+    // Garde anti double-envoi + stack vide.
+    if (batchRunningRef.current || stack.length === 0) return;
+    batchRunningRef.current = true;
     const queued = stack.map<BatchInput>((s) => ({ id: s.id, fileName: s.fileName, status: "queued", file: s.file }));
+    batchFilesRef.current = new Map(queued.map((q) => [q.id, q.file]));
     setBatch(queued);
     setBatchOpen(true);
+    // On vide le stack TOUT DE SUITE : la barre du bas disparaît et il devient
+    // impossible de re-cliquer "Envoyer" (le lot est parti). Le suivi se fait
+    // via l'overlay puis les InvoiceCard. Les échecs apparaissent en card
+    // "Lecture impossible"/"Doublon" dans la timeline (X pour retirer).
+    setStack([]);
+    void clearStack();
     void runBatch(queued);
   };
   const retryErrored = () => {
-    const erroredIds = new Set(batch.filter((i) => i.status === "error").map((i) => i.id));
-    const toRetry = stack.filter((s) => erroredIds.has(s.id));
+    if (batchRunningRef.current) return;
+    const toRetry = batch
+      .filter((i) => i.status === "error")
+      .map((i): BatchInput | null => {
+        const file = batchFilesRef.current.get(i.id);
+        return file ? { id: i.id, fileName: i.fileName, status: "queued", file } : null;
+      })
+      .filter((x): x is BatchInput => x !== null);
     if (toRetry.length === 0) return;
-    const queued = toRetry.map<BatchInput>((s) => ({ id: s.id, fileName: s.fileName, status: "queued", file: s.file }));
+    batchRunningRef.current = true;
     setBatchOpen(false);
-    setBatch(queued);
+    setBatch(toRetry);
     setBatchOpen(true);
-    void runBatch(queued);
+    void runBatch(toRetry);
   };
 
   // ─── Décision onboarding : pilotée par le serveur (profiles.onboarding_seen_at) ──

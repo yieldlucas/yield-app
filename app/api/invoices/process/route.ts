@@ -48,11 +48,13 @@ export async function POST(request: NextRequest) {
     const { email, supabase, accessToken } = bearer;
 
     // ─── Rate limit burst (migration 012) ───
-    // 5 scans / 2 min par user_id. Garde-fou court-terme contre le spam,
-    // distinct du quota mensuel (qui couvre la marge logique long-terme).
+    // 25 scans / 2 min par user_id. Garde-fou court-terme contre le spam,
+    // distinct du quota mensuel (200, qui couvre la marge logique long-terme).
+    // 25 (vs défaut 5) pour autoriser un VRAI lot de BL d'une semaine (10-20)
+    // sans bloquer les derniers items — l'abus reste capté par le quota mensuel.
     // Évalué AVANT toute autre lecture DB pour couper net les abuseurs.
     const { data: rateLimitRow, error: rateLimitErr } = await supabase
-      .rpc("check_scan_rate_limit", { p_user_id: userId })
+      .rpc("check_scan_rate_limit", { p_user_id: userId, p_max: 25, p_window_seconds: 120 })
       .single();
     if (rateLimitErr) throw internal("Erreur lors de la vérification du rate limit", rateLimitErr);
     const rl = rateLimitRow as { allowed: boolean; retry_after_seconds: number };
