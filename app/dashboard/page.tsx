@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { captureException } from "@sentry/nextjs";
 import { supabase } from "@/lib/supabase-browser";
 import { addToStack, listStack, removeFromStack, clearStack, type StackItem } from "@/lib/scan-stack";
 import { openSignedExport } from "@/lib/export-download";
@@ -15,6 +14,8 @@ import { openSignedExport } from "@/lib/export-download";
 import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
 import { CameraCapture } from "./_components/CameraCapture";
+// [batch-diag] overlay debug TEMPORAIRE — à retirer avec le fix final.
+import { DebugOverlay } from "./_components/DebugOverlay";
 import { StackTray } from "./_components/StackTray";
 import { TrialBanner } from "./_components/TrialBanner";
 import { ReferralTrialBanner } from "./_components/ReferralTrialBanner";
@@ -417,6 +418,13 @@ export default function DashboardPage() {
     if (batchRunningRef.current || stack.length === 0) return;
     batchRunningRef.current = true;
     const queued = stack.map<BatchInput>((s) => ({ id: s.id, fileName: s.fileName, status: "queued", file: s.file }));
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (issue runtime A vs C)
+    console.log("[batch-diag] queued at click", {
+      length: queued.length,
+      stackLength: stack.length,
+      fileNames: queued.map((q) => q.fileName),
+      timestamp: new Date().toISOString(),
+    });
     batchFilesRef.current = new Map(queued.map((q) => [q.id, q.file]));
     setBatch(queued);
     setBatchOpen(true);
@@ -811,19 +819,12 @@ export default function DashboardPage() {
       <CameraCapture
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
-        onCapture={(file) => {
-          // Observabilité : on ne laisse plus la rejection être avalée par `void`
-          // (sinon un échec d'ajout au stack disparaît en silence).
-          addCapturedFile(file).catch((err) => {
-            console.error("[scan] addCapturedFile failed", err);
-            captureException(err, {
-              tags: { feature: "scan-camera" },
-              extra: { fileName: file.name },
-            });
-          });
-        }}
+        onCapture={(file) => { void addCapturedFile(file); }}
         onPickFile={() => { setCameraOpen(false); openGallery(); }}
       />
+      {/* [batch-diag] overlay debug TEMPORAIRE — visible seulement si
+          NEXT_PUBLIC_BATCH_DIAG="true". À retirer avec le fix final. */}
+      <DebugOverlay />
       <AnimatePresence>
         {stack.length > 0 && (
           <StackTray

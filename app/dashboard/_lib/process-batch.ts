@@ -3,7 +3,6 @@
 // callbacks, et reconnaît les 402 (QUOTA_EXCEEDED / SUBSCRIPTION_REQUIRED)
 // pour stopper le lot et déclencher le bon flow d'upsell/paiement.
 
-import { captureException } from "@sentry/nextjs";
 import { type BatchItem } from "../_components/types";
 import {
   isPaymentRequired, isQuotaExceeded, processOne, type ProcessSignal,
@@ -42,20 +41,51 @@ export async function processBatch(
   cb: BatchCallbacks,
   signal?: ProcessSignal,
 ): Promise<void> {
+  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+  console.log("[batch-diag] processBatch start", {
+    itemsLength: items.length,
+    signalCancelled: signal?.cancelled ?? "n/a",
+    timestamp: new Date().toISOString(),
+  });
   for (const item of items) {
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+    console.log("[batch-diag] iter start", {
+      index: items.indexOf(item),
+      fileName: item.fileName,
+      signalCancelled: signal?.cancelled ?? "n/a",
+      timestamp: new Date().toISOString(),
+    });
     if (signal?.cancelled) return;
+    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+    console.log("[batch-diag] iter post-signal-check", {
+      index: items.indexOf(item),
+      willProcess: true,
+      timestamp: new Date().toISOString(),
+    });
     cb.updateItem(item.id, { status: "uploading" });
     try {
       // Petit délai pour donner du feedback visuel.
       await new Promise((r) => setTimeout(r, 400));
       if (signal?.cancelled) return;
       cb.updateItem(item.id, { status: "processing" });
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+      console.log("[batch-diag] iter pre-processOne", {
+        index: items.indexOf(item),
+        fileName: item.fileName,
+        timestamp: new Date().toISOString(),
+      });
       const result = await processOne(
         item.file,
         (step) => { if (!signal?.cancelled) cb.updateItem(item.id, step); },
         cb.onSessionLost,
         signal,
       );
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+      console.log("[batch-diag] iter post-processOne success", {
+        index: items.indexOf(item),
+        fileName: item.fileName,
+        timestamp: new Date().toISOString(),
+      });
       if (signal?.cancelled) return;
       cb.updateItem(item.id, {
         status: "done",
@@ -64,12 +94,16 @@ export async function processBatch(
       });
       await cb.onItemSuccess(item.id, result.scansUsed);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      // Observabilité : on log tout échec d'item (console).
-      console.error("[batch] item failed", { fileName: item.fileName, error: msg });
-      // 402 attendus (quota mensuel / essai expiré) = flow métier normal, PAS
-      // des bugs → on NE les envoie PAS à Sentry (bruit). L'UI gère via les
-      // callbacks dédiés (upsell / checkout).
+      const msg = err instanceof Error ? err.message : "Erreur inconnue";
+      // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (issue runtime A vs C)
+      console.error("[batch-diag] item failed", {
+        fileName: item.fileName,
+        index: items.indexOf(item),
+        totalItems: items.length,
+        error: msg,
+        rawError: err,
+        timestamp: new Date().toISOString(),
+      });
       if (isQuotaExceeded(err)) {
         cb.updateItem(item.id, { status: "error", error: "Quota mensuel atteint" });
         cb.cancelQueued("Lot annulé : quota atteint");
@@ -82,14 +116,13 @@ export async function processBatch(
         cb.onPaymentRequired();
         return;
       }
-      // Vraie erreur (réseau, lecture impossible, crash) → Sentry pour pouvoir
-      // diagnostiquer les futurs bugs de batch.
-      captureException(err, {
-        tags: { feature: "scan-batch" },
-        extra: { fileName: item.fileName, itemIndex: items.indexOf(item) },
-      });
       cb.updateItem(item.id, { status: "error", error: msg });
     }
   }
+  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
+  console.log("[batch-diag] processBatch end", {
+    itemsLength: items.length,
+    timestamp: new Date().toISOString(),
+  });
   cb.onBatchFinished();
 }
