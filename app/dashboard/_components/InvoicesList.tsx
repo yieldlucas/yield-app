@@ -3,7 +3,8 @@
 import { motion } from "framer-motion";
 import { Camera, FolderOpen } from "lucide-react";
 import { InvoiceCard } from "./InvoiceCard";
-import { type RecentInvoice, VARIATION_ALERT_PCT } from "./types";
+import { ProvisionalInvoiceCard } from "./ProvisionalInvoiceCard";
+import { type BatchItem, type RecentInvoice, VARIATION_ALERT_PCT } from "./types";
 
 export type InvoiceFilter = "all" | "rising" | "this_month";
 
@@ -20,6 +21,9 @@ export function InvoicesList({
   onInvoiceClick,
   onInvoiceDismiss,
   onCreateRecipeFromInvoice,
+  provisional = [],
+  onRetryProvisional,
+  onDismissProvisional,
 }: {
   invoices: RecentInvoice[];
   filter: InvoiceFilter;
@@ -30,10 +34,28 @@ export function InvoicesList({
   onInvoiceDismiss: (id: string) => void;
   /** Optionnel — affiche un raccourci "Créer une recette" sur chaque BL processed. */
   onCreateRecipeFromInvoice?: (id: string) => void;
+  /** Lot en cours : cartes provisoires affichées en tête, toujours visibles
+   *  (hors filtre) car elles représentent l'activité immédiate. */
+  provisional?: BatchItem[];
+  onRetryProvisional?: (id: string) => void;
+  onDismissProvisional?: (id: string) => void;
 }) {
+  // Cartes provisoires à rendre : tout sauf `done` (une carte `done` a déjà
+  // cédé la place à sa vraie carte facture issue du polling DB).
+  const provisionalCards = provisional.filter((i) => i.status !== "done");
+  // Lignes DB "possédées" par une carte provisoire active → on les masque pour
+  // éviter le doublon (la carte provisoire est la seule à les représenter
+  // jusqu'à `done`).
+  const ownedIds = new Set(
+    provisional
+      .filter((i) => i.invoiceId && i.status !== "done")
+      .map((i) => i.invoiceId as string),
+  );
+
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const filtered = invoices.filter((inv) => {
+    if (ownedIds.has(inv.id)) return false;
     if (filter === "rising") {
       return (inv.variation_pct ?? 0) >= VARIATION_ALERT_PCT;
     }
@@ -98,25 +120,33 @@ export function InvoicesList({
       </div>
 
       <div className="space-y-2.5">
-        {filtered.length === 0 ? (
-          <div className="rounded-xl bg-slate-50 border border-slate-100 p-5 text-center">
-            <p className="text-slate-400 text-xs">Aucune facture ne correspond à ce filtre.</p>
-          </div>
-        ) : (
-          filtered.map((inv) => (
-            <InvoiceCard
-              key={inv.id}
-              inv={inv}
-              onClick={inv.status === "processed" ? () => onInvoiceClick(inv.id) : undefined}
-              onDismiss={() => onInvoiceDismiss(inv.id)}
-              onCreateRecipe={
-                onCreateRecipeFromInvoice && inv.status === "processed"
-                  ? () => onCreateRecipeFromInvoice(inv.id)
-                  : undefined
-              }
-            />
-          ))
-        )}
+        {provisionalCards.map((item) => (
+          <ProvisionalInvoiceCard
+            key={item.id}
+            item={item}
+            onRetry={(id) => onRetryProvisional?.(id)}
+            onDismiss={(id) => onDismissProvisional?.(id)}
+          />
+        ))}
+        {filtered.length === 0
+          ? provisionalCards.length === 0 && (
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-5 text-center">
+                <p className="text-slate-400 text-xs">Aucune facture ne correspond à ce filtre.</p>
+              </div>
+            )
+          : filtered.map((inv) => (
+              <InvoiceCard
+                key={inv.id}
+                inv={inv}
+                onClick={inv.status === "processed" ? () => onInvoiceClick(inv.id) : undefined}
+                onDismiss={() => onInvoiceDismiss(inv.id)}
+                onCreateRecipe={
+                  onCreateRecipeFromInvoice && inv.status === "processed"
+                    ? () => onCreateRecipeFromInvoice(inv.id)
+                    : undefined
+                }
+              />
+            ))}
       </div>
     </motion.div>
   );

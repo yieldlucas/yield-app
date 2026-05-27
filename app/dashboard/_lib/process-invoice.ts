@@ -55,6 +55,9 @@ export type ProcessSignal = { cancelled: boolean };
  * @param onSessionLost callback si la session expire (le caller doit redirect)
  * @param signal optionnel — flippe `signal.cancelled = true` pour stopper
  *               proprement (utile lors du démontage du composant caller).
+ * @param onAck optionnel — appelé dès que l'API a accusé réception (202) avec
+ *              l'`invoice_id` créé. Permet à l'UI de corréler une carte
+ *              provisoire à la vraie ligne DB (dédoublonnage timeline).
  */
 export async function processOne(
   file: File,
@@ -64,12 +67,8 @@ export async function processOne(
   }) => void,
   onSessionLost: () => void,
   signal?: ProcessSignal,
+  onAck?: (invoiceId: string) => void,
 ): Promise<ProcessOneResult> {
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne enter", {
-    fileName: file.name,
-    timestamp: new Date().toISOString(),
-  });
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) {
     onSessionLost();
@@ -77,21 +76,10 @@ export async function processOne(
   }
   const formData = new FormData();
   formData.append("invoice", file);
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne pre-fetch", {
-    fileName: file.name,
-    timestamp: new Date().toISOString(),
-  });
   const res = await fetch("/api/invoices/process", {
     method: "POST",
     headers: { Authorization: `Bearer ${session.access_token}` },
     body: formData,
-  });
-  // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (phase 2, pinpoint sortie anticipée boucle)
-  console.log("[batch-diag] processOne post-fetch", {
-    fileName: file.name,
-    httpStatus: res.status,
-    timestamp: new Date().toISOString(),
   });
   if (res.status === 402) {
     const j = await res.json().catch(() => ({}));
@@ -111,6 +99,9 @@ export async function processOne(
   const ack = await res.json().catch(() => ({})) as { invoice_id?: string };
   const invoiceId = ack.invoice_id;
   if (!invoiceId) throw new Error("Réponse serveur invalide");
+  // La ligne DB existe désormais : on remonte son id pour que l'UI puisse
+  // dédoublonner (la carte provisoire cède la place à la vraie carte facture).
+  onAck?.(invoiceId);
 
   // ─── Polling 3s ───
   // Tolère 3 erreurs réseau consécutives avant d'abandonner — au-delà c'est

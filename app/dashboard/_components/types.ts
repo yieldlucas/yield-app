@@ -59,4 +59,8 @@ export interface BatchItem {
   /** Sous-état pendant 'processing' — alimenté par polling de invoices.processing_step. */
   processingStep?: "extracting" | "matching" | "alerting" | null;
   totalItemsCount?: number | null;
+  /** id de la ligne `invoices` créée côté serveur, dès l'accusé de réception
+   *  (202). Sert à corréler cette carte provisoire à la vraie carte facture de
+   *  la timeline pour éviter un doublon visuel pendant l'analyse. */
+  invoiceId?: string;
 }

@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, FolderOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { captureException } from "@sentry/nextjs";
 import { supabase } from "@/lib/supabase-browser";
 import { addToStack, listStack, removeFromStack, clearStack, type StackItem } from "@/lib/scan-stack";
 import { openSignedExport } from "@/lib/export-download";
@@ -14,14 +15,11 @@ import { openSignedExport } from "@/lib/export-download";
 import { ScannerFAB } from "./_components/ScannerFAB";
 import { CameraGuide } from "./_components/CameraGuide";
 import { CameraCapture } from "./_components/CameraCapture";
-// [batch-diag] overlay debug TEMPORAIRE — à retirer avec le fix final.
-import { DebugOverlay } from "./_components/DebugOverlay";
 import { StackTray } from "./_components/StackTray";
 import { TrialBanner } from "./_components/TrialBanner";
 import { ReferralTrialBanner } from "./_components/ReferralTrialBanner";
 import { OnboardingModal } from "./_components/OnboardingModal";
 import { ConciergeButton } from "./_components/ConciergeButton";
-import { BatchOverlay } from "./_components/BatchOverlay";
 import { QuotaExceededModal } from "./_components/QuotaExceededModal";
 import { InvoicesList, type InvoiceFilter } from "./_components/InvoicesList";
 import { DashboardHeader } from "./_components/DashboardHeader";
@@ -43,15 +41,17 @@ import { fetchInvoiceLinesForCalc, fetchRecentScansCount } from "./_lib/dashboar
 import {
   ActivatingBanner, ActivatedBanner, PaymentRequiredBanner, BillingErrorBanner,
 } from "./_components/SubscriptionBanners";
-import { type Alert, type RecentInvoice, type BatchItem } from "./_components/types";
+import { type Alert, type RecentInvoice } from "./_components/types";
 import { useStripeActivationPolling } from "./_hooks/useStripeActivationPolling";
 import { useInvoicesPolling } from "./_hooks/useInvoicesPolling";
 import {
   fetchUsage, fetchInvoices, invoicesChanged, fetchAlerts,
   markAlertRead, deleteInvoice, fetchMonthlyStats, type MonthlyStats,
 } from "./_lib/dashboard-data";
-import { processBatch, type BatchInput } from "./_lib/process-batch";
-import { type ProcessSignal } from "./_lib/process-invoice";
+import { type BatchInput } from "./_lib/process-batch";
+import {
+  useBatch, setBatchHandlers, startBatch, retryItem, dismissItem,
+} from "./_lib/batch-store";
 
 const QUOTA = 200;
 const CAMERA_GUIDE_SEEN_KEY = "yield_camera_guide_seen";
@@ -78,8 +78,9 @@ export default function DashboardPage() {
   const [stripePollActive, setStripePollActive] = useState(false);
   const [activatingSubscription, setActivatingSubscription] = useState(false);
   const [subscriptionActivated, setSubscriptionActivated] = useState(false);
-  const [batch, setBatch] = useState<BatchItem[]>([]);
-  const [batchOpen, setBatchOpen] = useState(false);
+  // Lot de scans en cours : lu depuis le store global (survit à la navigation
+  // entre /dashboard, /dashboard/recipes, /dashboard/profile).
+  const { items: batchItems, running: batchRunning } = useBatch();
   const [cameraGuideOpen, setCameraGuideOpen] = useState(false);
   // Caméra intégrée (getUserMedia) — remplace le déclenchement <input capture>.
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -124,9 +125,6 @@ export default function DashboardPage() {
   const prevProcessedCountRef = useRef<number>(0);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
-  // Signal partagé avec processBatch : flippé à true au démontage pour
-  // arrêter proprement le polling et éviter les setState orphelins.
-  const batchSignalRef = useRef<ProcessSignal>({ cancelled: false });
 
   // ─── Camera UX : caméra intégrée (getUserMedia) ───
   // openCamera ouvre désormais le composant CameraCapture plutôt que de
@@ -347,110 +345,51 @@ export default function DashboardPage() {
   };
   const clearStackAll = async () => { await clearStack(); setStack([]); };
 
-  /** Lance un lot. La logique d'orchestration (callbacks) vit dans _lib/process-batch.
-   *
-   *  Background scan UX : dès qu'un item passe en "processing" (upload OK,
-   *  Vision analyse côté serveur), on auto-close le BatchOverlay après un
-   *  court délai. Le polling existant sur les invoices.processing_step
-   *  prend le relais via les InvoiceCard, sans bloquer l'écran. */
-  const hasAutoClosedRef = useRef(false);
-  // Garde anti-réentrée : empêche de relancer un lot tant que le précédent
-  // tourne (l'overlay s'auto-ferme avant la fin → sans ça le bouton "Envoyer"
-  // se réactiverait et on relancerait le même lot en double).
-  const batchRunningRef = useRef(false);
-  // Fichiers du lot courant (id → File) pour permettre le retry des items en
-  // erreur, maintenant que le stack est vidé dès l'envoi.
-  const batchFilesRef = useRef<Map<string, File>>(new Map());
-  const runBatch = (input: BatchInput[]) => {
-    hasAutoClosedRef.current = false;
-    return processBatch(input, {
-      updateItem: (id, patch) => {
-        setBatch((b) => b.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-        // Premier item arrivé côté serveur (upload terminé) → on libère
-        // l'écran. L'analyse Vision continue silencieusement, la card
-        // InvoiceCard correspondante apparaitra en "processing" avec spinner.
-        if (patch.status === "processing" && !hasAutoClosedRef.current) {
-          hasAutoClosedRef.current = true;
-          // 1) Reload immédiat des factures pour que l'InvoiceCard "processing"
-          //    apparaisse dans la timeline dès le retour au dashboard.
-          // 2) Close après 1.2s — laisse le temps de voir "Analyse lancée"
-          //    pour ne pas que le chef se demande si ça a marché.
-          void reloadInvoices();
-          window.setTimeout(() => setBatchOpen(false), 1200);
-        }
-      },
-      cancelQueued: (reason) =>
-        setBatch((b) => b.map((x) => (x.status === "queued" ? { ...x, status: "error", error: reason } : x))),
-      onItemSuccess: async (id, scansUsed) => {
+  // ─── Lot de scans : effets de bord page-spécifiques injectés dans le store ──
+  // La boucle processBatch et l'état des cartes vivent dans batch-store (hors
+  // React → survit à la navigation). La page n'y branche que ses effets de bord
+  // (compteur quota, upsell, checkout, reload des données). Ré-enregistrés à
+  // chaque rendu pour capturer des closures fraîches ; remis à {} au démontage
+  // du dashboard (les effets sont alors ignorés, mais le traitement continue).
+  useEffect(() => {
+    setBatchHandlers({
+      onItemSuccess: (scansUsed) => {
         if (typeof scansUsed === "number") {
           setUsage((u) => (u ? { ...u, used: scansUsed } : { used: scansUsed, quota: QUOTA }));
         }
-        await removeFromStack(id);
-        setStack((prev) => prev.filter((s) => s.id !== id));
       },
-      onSessionLost: () => router.replace("/"),
       onQuotaExceeded: () => {
-        batchRunningRef.current = false;
-        setBatchOpen(false);
         setQuotaExceeded(true);
         setUsage((u) => (u ? { ...u, used: u.quota } : { used: QUOTA, quota: QUOTA }));
       },
       onPaymentRequired: () => {
-        batchRunningRef.current = false;
-        setBatchOpen(false);
         setShowTrial(true);
         setPaymentRequired(true);
         setTimeout(() => { void startCheckout(); }, 600);
       },
       onBatchFinished: () => {
-        batchRunningRef.current = false;
         void reloadInvoices();
         void reloadAlerts();
         void reloadMonthlyStats();
         void reloadRecipesStats();
         void reloadRecentScans();
       },
-    }, batchSignalRef.current);
-  };
+      onSessionLost: () => router.replace("/"),
+    });
+    return () => setBatchHandlers({});
+  });
 
   const sendStack = () => {
-    // Garde anti double-envoi + stack vide.
-    if (batchRunningRef.current || stack.length === 0) return;
-    batchRunningRef.current = true;
+    // Garde anti double-envoi + stack vide (le store reverrouille en interne).
+    if (batchRunning || stack.length === 0) return;
     const queued = stack.map<BatchInput>((s) => ({ id: s.id, fileName: s.fileName, status: "queued", file: s.file }));
-    // [batch-diag] log temporaire — à retirer après identification du bug scan caméra (issue runtime A vs C)
-    console.log("[batch-diag] queued at click", {
-      length: queued.length,
-      stackLength: stack.length,
-      fileNames: queued.map((q) => q.fileName),
-      timestamp: new Date().toISOString(),
-    });
-    batchFilesRef.current = new Map(queued.map((q) => [q.id, q.file]));
-    setBatch(queued);
-    setBatchOpen(true);
     // On vide le stack TOUT DE SUITE : la barre du bas disparaît et il devient
     // impossible de re-cliquer "Envoyer" (le lot est parti). Le suivi se fait
-    // via l'overlay puis les InvoiceCard. Les échecs apparaissent en card
-    // "Lecture impossible"/"Doublon" dans la timeline (X pour retirer).
+    // via les cartes provisoires inline (queued → uploading → processing → vraie
+    // carte facture), et les échecs restent en carte rouge "Réessayer".
     setStack([]);
     void clearStack();
-    void runBatch(queued);
-  };
-  const retryErrored = () => {
-    if (batchRunningRef.current) return;
-    const toRetry = batch
-      .filter((i) => i.status === "error")
-      .map((i): BatchInput | null => {
-        const file = batchFilesRef.current.get(i.id);
-        return file ? { id: i.id, fileName: i.fileName, status: "queued", file } : null;
-      })
-      .filter((x): x is BatchInput => x !== null);
-    if (toRetry.length === 0) return;
-    batchRunningRef.current = true;
-    setBatchOpen(false);
-    setBatch(toRetry);
-    setBatchOpen(true);
-    void runBatch(toRetry);
+    startBatch(queued);
   };
 
   // ─── Décision onboarding : pilotée par le serveur (profiles.onboarding_seen_at) ──
@@ -496,15 +435,6 @@ export default function DashboardPage() {
     }
     prevProcessedCountRef.current = processedCount;
   }, [invoices, founderInfo]);
-
-  // ─── Cleanup : flippe le signal d'annulation au démontage ──
-  // Sans ça, un user qui quitte le dashboard pendant un batch verrait React
-  // warner "Can't perform a state update on an unmounted component" car les
-  // callbacks de processBatch tenteraient de setBatch / setUsage / etc.
-  useEffect(() => {
-    const ref = batchSignalRef.current;
-    return () => { ref.cancelled = true; };
-  }, []);
 
   // ─── Bootstrap : session, data, onboarding, retour Stripe ──
   useEffect(() => {
@@ -600,12 +530,27 @@ export default function DashboardPage() {
     },
   });
 
-  // Polling factures tant qu'au moins une est en processing
+  // Polling factures tant qu'au moins une est en processing, OU tant qu'un lot
+  // tourne (pour que les vraies cartes facture apparaissent au fil de l'analyse
+  // et remplacent les cartes provisoires, même avant le premier reload).
   const hasProcessing = invoices.some((i) => i.status === "processing" || i.status === "pending");
-  useInvoicesPolling(hasProcessing, () => { void reloadInvoices(); });
+  useInvoicesPolling(batchRunning || hasProcessing, () => { void reloadInvoices(); });
+
+  // Dès qu'un item du lot aboutit, on recharge la timeline sans attendre le
+  // prochain tick : la vraie carte facture (montant + variation) prend aussitôt
+  // la place de la carte provisoire `done`.
+  const batchDoneCount = batchItems.filter((i) => i.status === "done").length;
+  useEffect(() => {
+    if (batchDoneCount > 0) void reloadInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchDoneCount]);
 
   // ─── Dérivés pour le rendu ─────────────────────────────────
   const unreadCount = alerts.filter((a) => !a.is_read).length;
+  // Cartes provisoires en attente d'affichage (tout sauf `done`, qui est repris
+  // par la vraie carte facture). Sert à afficher la timeline même sur un tout
+  // premier scan (aucune facture DB encore).
+  const hasProvisionalCards = batchItems.some((i) => i.status !== "done");
 
   /** Nom d'accueil intelligent : priorité au nom du restaurant (saisi à
    *  l'onboarding), fallback "Chef". On évite délibérément le préfixe
@@ -741,8 +686,9 @@ export default function DashboardPage() {
 
         {/* Empty state additionnel : si aucune facture, on offre l'option
             "Importer un fichier" en lien discret. L'option scan est déjà
-            portée par DashboardHero Card A — pas de gros bouton redondant. */}
-        {invoices.length === 0 && (
+            portée par DashboardHero Card A — pas de gros bouton redondant.
+            Masqué pendant un lot (les cartes provisoires occupent déjà l'espace). */}
+        {invoices.length === 0 && !hasProvisionalCards && (
           <motion.button
             onClick={openGallery}
             initial={{ opacity: 0 }}
@@ -767,13 +713,16 @@ export default function DashboardPage() {
             (NotificationsBell). La timeline ne contient plus que des
             InvoiceCard pour un dashboard ultra-pro et épuré. */}
 
-        {invoices.length > 0 && (
+        {(invoices.length > 0 || hasProvisionalCards) && (
           <InvoicesList
             invoices={invoices} filter={invoiceFilter} onFilterChange={setInvoiceFilter}
             onOpenCamera={openCamera} onOpenGallery={openGallery}
             onInvoiceClick={(id) => router.push(`/dashboard/invoices/${id}`)}
             onInvoiceDismiss={dismissInvoice}
             onCreateRecipeFromInvoice={(id) => { void createRecipeFromInvoice(id); }}
+            provisional={batchItems}
+            onRetryProvisional={retryItem}
+            onDismissProvisional={dismissItem}
           />
         )}
 
@@ -819,29 +768,31 @@ export default function DashboardPage() {
       <CameraCapture
         open={cameraOpen}
         onClose={() => setCameraOpen(false)}
-        onCapture={(file) => { void addCapturedFile(file); }}
+        onCapture={(file) => {
+          // Observabilité : on ne laisse plus la rejection être avalée par `void`
+          // (sinon un échec d'ajout au stack disparaît en silence).
+          addCapturedFile(file).catch((err) => {
+            console.error("[scan] addCapturedFile failed", err);
+            captureException(err, {
+              tags: { feature: "scan-camera" },
+              extra: { fileName: file.name },
+            });
+          });
+        }}
         onPickFile={() => { setCameraOpen(false); openGallery(); }}
       />
-      {/* [batch-diag] overlay debug TEMPORAIRE — visible seulement si
-          NEXT_PUBLIC_BATCH_DIAG="true". À retirer avec le fix final. */}
-      <DebugOverlay />
       <AnimatePresence>
         {stack.length > 0 && (
           <StackTray
             items={stack}
             onSend={sendStack} onRemove={removeStackItem} onClearAll={clearStackAll}
             onAddMore={openCamera} onShowGuide={() => setCameraGuideOpen(true)}
-            busy={batchOpen && !batch.every((i) => i.status === "done" || i.status === "error")}
+            busy={batchRunning}
           />
         )}
       </AnimatePresence>
       <QuotaExceededModal open={quotaExceeded} quota={QUOTA} onClose={() => setQuotaExceeded(false)} />
       <ConciergeButton />
-      <BatchOverlay
-        items={batch} open={batchOpen}
-        onClose={() => { setBatchOpen(false); setBatch([]); }}
-        onRetake={retryErrored}
-      />
       <OnboardingModal
         show={showOnboarding}
         onClose={dismissOnboarding}
